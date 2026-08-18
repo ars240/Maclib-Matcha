@@ -4,61 +4,182 @@
 local Maclib = {
     Version = "1.0.0",
     Flags = {},
+    Elements = {},
     Windows = {},
-    ConfigFolder = "MaclibConfigs",
-    EnumToVK = {
-        [Enum.KeyCode.Unknown] = 0x00,
-        [Enum.KeyCode.MouseButton1] = 0x01,
-        [Enum.KeyCode.MouseButton2] = 0x02,
-        [Enum.KeyCode.MouseButton3] = 0x04,
-        [Enum.KeyCode.A] = 0x41, [Enum.KeyCode.B] = 0x42, [Enum.KeyCode.C] = 0x43,
-        [Enum.KeyCode.D] = 0x44, [Enum.KeyCode.E] = 0x45, [Enum.KeyCode.F] = 0x46,
-        [Enum.KeyCode.G] = 0x47, [Enum.KeyCode.H] = 0x48, [Enum.KeyCode.I] = 0x49,
-        [Enum.KeyCode.J] = 0x4A, [Enum.KeyCode.K] = 0x4B, [Enum.KeyCode.L] = 0x4C,
-        [Enum.KeyCode.M] = 0x4D, [Enum.KeyCode.N] = 0x4E, [Enum.KeyCode.O] = 0x4F,
-        [Enum.KeyCode.P] = 0x50, [Enum.KeyCode.Q] = 0x51, [Enum.KeyCode.R] = 0x52,
-        [Enum.KeyCode.S] = 0x53, [Enum.KeyCode.T] = 0x54, [Enum.KeyCode.U] = 0x55,
-        [Enum.KeyCode.V] = 0x56, [Enum.KeyCode.W] = 0x57, [Enum.KeyCode.X] = 0x58,
-        [Enum.KeyCode.Y] = 0x59, [Enum.KeyCode.Z] = 0x5A,
-        [Enum.KeyCode.Zero] = 0x30, [Enum.KeyCode.One] = 0x31, [Enum.KeyCode.Two] = 0x32,
-        [Enum.KeyCode.Three] = 0x33, [Enum.KeyCode.Four] = 0x34, [Enum.KeyCode.Five] = 0x35,
-        [Enum.KeyCode.Six] = 0x36, [Enum.KeyCode.Seven] = 0x37, [Enum.KeyCode.Eight] = 0x38,
-        [Enum.KeyCode.Nine] = 0x39,
-        [Enum.KeyCode.Space] = 0x20, [Enum.KeyCode.LeftShift] = 0xA0, [Enum.KeyCode.RightShift] = 0xA1,
-        [Enum.KeyCode.LeftControl] = 0xA2, [Enum.KeyCode.RightControl] = 0xA3,
-        [Enum.KeyCode.LeftAlt] = 0x12, [Enum.KeyCode.RightAlt] = 0x12,
-        [Enum.KeyCode.Tab] = 0x09, [Enum.KeyCode.Return] = 0x0D, [Enum.KeyCode.Escape] = 0x1B,
-        [Enum.KeyCode.Insert] = 0x2D, [Enum.KeyCode.Delete] = 0x2E,
-        [Enum.KeyCode.Home] = 0x24, [Enum.KeyCode.End] = 0x23,
-        [Enum.KeyCode.PageUp] = 0x21, [Enum.KeyCode.PageDown] = 0x22,
-        [Enum.KeyCode.F1] = 0x70, [Enum.KeyCode.F2] = 0x71, [Enum.KeyCode.F3] = 0x72,
-        [Enum.KeyCode.F4] = 0x73, [Enum.KeyCode.F5] = 0x74, [Enum.KeyCode.F6] = 0x75,
-        [Enum.KeyCode.F7] = 0x76, [Enum.KeyCode.F8] = 0x77, [Enum.KeyCode.F9] = 0x78,
-        [Enum.KeyCode.F10] = 0x79, [Enum.KeyCode.F11] = 0x7A, [Enum.KeyCode.F12] = 0x7B
-    }
+    ConfigFolder = "MaclibConfigs"
 }
 
-local function toVK(key)
-    if typeof(key) == "number" then return key end
-    if typeof(key) == "EnumItem" or typeof(key) == "userdata" then
-        return Maclib.EnumToVK[key] or 0x00
-    end
-    return 0x00
+local function parseKey(key)
+    if key == nil then return 0 end
+    return key
 end
 
-local HttpService = game:GetService("HttpService")
-local function jsonEncode(tbl)
-    return HttpService:JSONEncode(tbl)
+-- =========================================================================
+-- PURE LUA JSON SERIALIZER
+-- =========================================================================
+local function jsonEncode(val)
+    local t = type(val)
+    if t == "table" then
+        local isArray = true
+        local n = #val
+        for k, _ in pairs(val) do
+            if type(k) ~= "number" or k < 1 or k > n or math.floor(k) ~= k then
+                isArray = false
+                break
+            end
+        end
+        if isArray then
+            local items = {}
+            for i = 1, n do
+                table.insert(items, jsonEncode(val[i]))
+            end
+            return "[" .. table.concat(items, ",") .. "]"
+        else
+            local items = {}
+            for k, v in pairs(val) do
+                table.insert(items, string.format("%q:%s", tostring(k), jsonEncode(v)))
+            end
+            return "{" .. table.concat(items, ",") .. "}"
+        end
+    elseif t == "string" then
+        return string.format("%q", val)
+    elseif t == "number" or t == "boolean" then
+        return tostring(val)
+    else
+        return "null"
+    end
 end
 
 local function jsonDecode(str)
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(str)
-    end)
-    if success and type(result) == "table" then
-        return result
+    if not str or str == "" then return nil end
+    local pos = 1
+    local len = #str
+
+    local function skipWhitespace()
+        while pos <= len do
+            local c = str:sub(pos, pos)
+            if c == " " or c == "\t" or c == "\n" or c == "\r" then
+                pos = pos + 1
+            else
+                break
+            end
+        end
     end
-    return nil
+
+    local parseValue
+
+    local function parseString()
+        pos = pos + 1
+        local start = pos
+        while pos <= len do
+            local c = str:sub(pos, pos)
+            if c == '"' and str:sub(pos - 1, pos - 1) ~= '\\' then
+                local res = str:sub(start, pos - 1)
+                pos = pos + 1
+                res = res:gsub('\\"', '"'):gsub('\\\\', '\\')
+                return res
+            end
+            pos = pos + 1
+        end
+        return ""
+    end
+
+    local function parseNumber()
+        local start = pos
+        while pos <= len do
+            local c = str:sub(pos, pos)
+            if c:match("[%d%.%-%+eE]") then
+                pos = pos + 1
+            else
+                break
+            end
+        end
+        return tonumber(str:sub(start, pos - 1))
+    end
+
+    local function parseArray()
+        pos = pos + 1
+        local arr = {}
+        skipWhitespace()
+        if str:sub(pos, pos) == "]" then
+            pos = pos + 1
+            return arr
+        end
+        while pos <= len do
+            local val = parseValue()
+            table.insert(arr, val)
+            skipWhitespace()
+            local c = str:sub(pos, pos)
+            if c == "," then
+                pos = pos + 1
+            elseif c == "]" then
+                pos = pos + 1
+                return arr
+            else
+                break
+            end
+        end
+        return arr
+    end
+
+    local function parseObject()
+        pos = pos + 1
+        local obj = {}
+        skipWhitespace()
+        if str:sub(pos, pos) == "}" then
+            pos = pos + 1
+            return obj
+        end
+        while pos <= len do
+            skipWhitespace()
+            if str:sub(pos, pos) == '"' then
+                local key = parseString()
+                skipWhitespace()
+                if str:sub(pos, pos) == ":" then
+                    pos = pos + 1
+                    local val = parseValue()
+                    obj[key] = val
+                end
+            end
+            skipWhitespace()
+            local c = str:sub(pos, pos)
+            if c == "," then
+                pos = pos + 1
+            elseif c == "}" then
+                pos = pos + 1
+                return obj
+            else
+                break
+            end
+        end
+        return obj
+    end
+
+    parseValue = function()
+        skipWhitespace()
+        local c = str:sub(pos, pos)
+        if c == '"' then
+            return parseString()
+        elseif c == "{" then
+            return parseObject()
+        elseif c == "[" then
+            return parseArray()
+        elseif c == "t" and str:sub(pos, pos + 3) == "true" then
+            pos = pos + 4
+            return true
+        elseif c == "f" and str:sub(pos, pos + 4) == "false" then
+            pos = pos + 5
+            return false
+        elseif c == "n" and str:sub(pos, pos + 3) == "null" then
+            pos = pos + 4
+            return nil
+        else
+            return parseNumber()
+        end
+    end
+
+    local ok, res = pcall(parseValue)
+    if ok then return res else return nil end
 end
 
 function Maclib:Notify(options)
@@ -72,25 +193,69 @@ function Maclib:Notify(options)
     end
 end
 
+-- =========================================================================
+-- CONFIG & SETTINGS MANAGER
+-- =========================================================================
+
+function Maclib:PackConfig(window)
+    local data = {
+        Version = self.Version,
+        SavedAt = tick(),
+        Flags = {},
+        Colors = {}
+    }
+
+    for id, el in pairs(self.Elements) do
+        if el.Type == "Toggle" or el.Type == "Slider" or el.Type == "Input" or el.Type == "Dropdown" then
+            local val = el:GetValue()
+            data.Flags[id] = val
+        end
+    end
+
+    for flagId, val in pairs(self.Flags) do
+        if data.Flags[flagId] == nil then
+            if type(val) == "number" or type(val) == "string" or type(val) == "boolean" or type(val) == "table" then
+                data.Flags[flagId] = val
+            elseif typeof(val) == "Color3" then
+                data.Colors[flagId] = { val.R, val.G, val.B }
+            end
+        end
+    end
+
+    return data
+end
+
+function Maclib:ApplyConfig(window, data)
+    if not data or not data.Flags then return false end
+
+    for flagId, val in pairs(data.Flags) do
+        self.Flags[flagId] = val
+        UI.SetValue(flagId, val)
+        local el = self.Elements[flagId]
+        if el and el.Callback then
+            pcall(function() el.Callback(val) end)
+        end
+    end
+
+    if data.Colors then
+        for colId, colData in pairs(data.Colors) do
+            if type(colData) == "table" and #colData >= 3 then
+                local col = Color3.new(colData[1], colData[2], colData[3])
+                self.Flags[colId] = col
+            end
+        end
+    end
+
+    return true
+end
+
 function Maclib:SaveConfig(window, configName)
     if not configName or configName == "" then return false end
     local folder = window.ConfigFolder or self.ConfigFolder
     if not isfolder(folder) then makefolder(folder) end
 
     local path = folder .. "/" .. configName .. ".json"
-    local data = {
-        Version = self.Version,
-        SavedAt = tick(),
-        Flags = {}
-    }
-
-    for flagId, val in pairs(self.Flags) do
-        if type(val) == "number" or type(val) == "string" or type(val) == "boolean" then
-            data.Flags[flagId] = val
-        elseif typeof(val) == "Color3" then
-            data.Flags[flagId] = { _type = "Color3", R = val.R, G = val.G, B = val.B }
-        end
-    end
+    local data = self:PackConfig(window)
 
     writefile(path, jsonEncode(data))
     self:Notify({
@@ -117,15 +282,9 @@ function Maclib:LoadConfig(window, configName)
 
     local raw = readfile(path)
     local data = jsonDecode(raw)
-    if not data or not data.Flags then return false end
+    if not data then return false end
 
-    for flagId, val in pairs(data.Flags) do
-        if type(val) == "table" and val._type == "Color3" then
-            val = Color3.new(val.R, val.G, val.B)
-        end
-        self.Flags[flagId] = val
-        UI.SetValue(flagId, val)
-    end
+    self:ApplyConfig(window, data)
 
     self:Notify({
         Title = "Config Loaded",
@@ -157,12 +316,40 @@ function Maclib:GetConfigs(window)
     local configs = {}
     for _, f in ipairs(files) do
         local name = f:match("([^\\/]+)%.json$")
-        if name then
+        if name and name ~= "autoload" then
             table.insert(configs, name)
         end
     end
     return configs
 end
+
+function Maclib:SetAutoload(window, configName)
+    local folder = window.ConfigFolder or self.ConfigFolder
+    if not isfolder(folder) then makefolder(folder) end
+    writefile(folder .. "/autoload.json", jsonEncode({ Autoload = configName }))
+    self:Notify({
+        Title = "Autoload Set",
+        Description = "Set autoload to " .. tostring(configName),
+        Lifetime = 3
+    })
+end
+
+function Maclib:GetAutoload(window)
+    local folder = window.ConfigFolder or self.ConfigFolder
+    local path = folder .. "/autoload.json"
+    if isfile(path) then
+        local raw = readfile(path)
+        local data = jsonDecode(raw)
+        if data and data.Autoload then
+            return data.Autoload
+        end
+    end
+    return nil
+end
+
+-- =========================================================================
+-- WINDOW CLASS
+-- =========================================================================
 
 function Maclib:Window(config)
     config = config or {}
@@ -192,7 +379,7 @@ function Maclib:Window(config)
         local watermarkText = Drawing.new("Text")
         watermarkText.Color = Color3.fromRGB(240, 240, 240)
         watermarkText.Font = Drawing.Fonts.System or 1
-        watermarkText.FontSize = 13
+        watermarkText.Size = 13
         watermarkText.Outline = true
         watermarkText.Visible = true
         watermarkText.Position = Vector2.new(22, 20)
@@ -275,7 +462,7 @@ function Maclib:Window(config)
             table.insert(tabObj.RenderQueue, sectionRenderer)
 
             function secObj:Toggle(tConfig)
-                local id = tConfig.Id or tConfig.Flag or (secName .. "_" .. (tConfig.Name or "Toggle"))
+                local id = tConfig.Id or tConfig.Flag or (tabName .. "_" .. secName .. "_" .. (tConfig.Name or "Toggle"))
                 local label = tConfig.Name or "Toggle"
                 local default = tConfig.Default or false
                 local callback = tConfig.Callback or function() end
@@ -285,10 +472,12 @@ function Maclib:Window(config)
                     Type = "Toggle",
                     Value = default,
                     Page = tConfig.Page,
+                    Callback = callback,
                     SubElements = {}
                 }
 
                 Maclib.Flags[id] = default
+                Maclib.Elements[id] = toggleObj
 
                 toggleObj.Render = function(nativeSec)
                     local widget = nativeSec:Toggle(id, label, default, function(state)
@@ -316,7 +505,7 @@ function Maclib:Window(config)
 
                 function toggleObj:Keybind(kbConfig)
                     local kbId = kbConfig.Id or kbConfig.Flag or (id .. "_kb")
-                    local key = toVK(kbConfig.Default or 0x00)
+                    local key = parseKey(kbConfig.Default)
                     local mode = (kbConfig.Mode or "hold"):lower()
                     local label = kbConfig.HotkeyLabel or tConfig.Name
 
@@ -338,7 +527,7 @@ function Maclib:Window(config)
                     end
 
                     function kbObj:SetKey(newKey)
-                        if kbObj.Widget then kbObj.Widget:SetKey(toVK(newKey)) end
+                        if kbObj.Widget then kbObj.Widget:SetKey(parseKey(newKey)) end
                     end
 
                     function kbObj:SetType(newMode)
@@ -410,7 +599,7 @@ function Maclib:Window(config)
             end
 
             function secObj:Slider(sConfig)
-                local id = sConfig.Id or sConfig.Flag or (secName .. "_" .. (sConfig.Name or "Slider"))
+                local id = sConfig.Id or sConfig.Flag or (tabName .. "_" .. secName .. "_" .. (sConfig.Name or "Slider"))
                 local label = sConfig.Name or "Slider"
                 local min = sConfig.Min or 0
                 local max = sConfig.Max or 100
@@ -423,10 +612,12 @@ function Maclib:Window(config)
                     Id = id,
                     Type = "Slider",
                     Value = default,
-                    Page = sConfig.Page
+                    Page = sConfig.Page,
+                    Callback = callback
                 }
 
                 Maclib.Flags[id] = default
+                Maclib.Elements[id] = sliderObj
 
                 sliderObj.Render = function(nativeSec)
                     local w
@@ -461,7 +652,7 @@ function Maclib:Window(config)
             end
 
             function secObj:Dropdown(dConfig)
-                local id = dConfig.Id or dConfig.Flag or (secName .. "_" .. (dConfig.Name or "Dropdown"))
+                local id = dConfig.Id or dConfig.Flag or (tabName .. "_" .. secName .. "_" .. (dConfig.Name or "Dropdown"))
                 local label = dConfig.Name or "Dropdown"
                 local options = dConfig.Options or {}
                 local defaultIdx = 0
@@ -484,10 +675,12 @@ function Maclib:Window(config)
                     Type = "Dropdown",
                     Options = options,
                     Value = options[defaultIdx + 1] or "",
-                    Page = dConfig.Page
+                    Page = dConfig.Page,
+                    Callback = callback
                 }
 
                 Maclib.Flags[id] = dropObj.Value
+                Maclib.Elements[id] = dropObj
 
                 dropObj.Render = function(nativeSec)
                     local w = nativeSec:Combo(id, label, options, defaultIdx, function(idx, text)
@@ -523,6 +716,10 @@ function Maclib:Window(config)
                     return dropObj.Widget and dropObj.Widget:GetText() or dropObj.Value
                 end
 
+                function dropObj:GetValue()
+                    return dropObj:GetText()
+                end
+
                 function dropObj:SetValue(index)
                     local zeroBased = type(index) == "number" and math.max(0, index - 1) or 0
                     if dropObj.Widget then dropObj.Widget:SetValue(zeroBased) end
@@ -533,7 +730,7 @@ function Maclib:Window(config)
             end
 
             function secObj:Input(iConfig)
-                local id = iConfig.Id or iConfig.Flag or (secName .. "_" .. (iConfig.Name or "Input"))
+                local id = iConfig.Id or iConfig.Flag or (tabName .. "_" .. secName .. "_" .. (iConfig.Name or "Input"))
                 local label = iConfig.Name or "Input"
                 local default = iConfig.Default or ""
                 local callback = iConfig.Callback or function() end
@@ -542,10 +739,12 @@ function Maclib:Window(config)
                     Id = id,
                     Type = "Input",
                     Value = default,
-                    Page = iConfig.Page
+                    Page = iConfig.Page,
+                    Callback = callback
                 }
 
                 Maclib.Flags[id] = default
+                Maclib.Elements[id] = inputObj
 
                 inputObj.Render = function(nativeSec)
                     local w = nativeSec:InputText(id, label, default, function(text)
@@ -674,6 +873,16 @@ function Maclib:Window(config)
         })
 
         sec:Button({
+            Name = "Set As Autoload",
+            Callback = function()
+                local selected = configDropdown:GetText()
+                if selected and selected ~= "None" then
+                    Maclib:SetAutoload(window, selected)
+                end
+            end
+        })
+
+        sec:Button({
             Name = "Delete Config",
             Callback = function()
                 local selected = configDropdown:GetText()
@@ -698,6 +907,13 @@ function Maclib:Window(config)
             end
         })
 
+        task.spawn(function()
+            local auto = Maclib:GetAutoload(window)
+            if auto then
+                Maclib:LoadConfig(window, auto)
+            end
+        end)
+
         return sec
     end
 
@@ -713,4 +929,5 @@ function Maclib:Window(config)
     return window
 end
 
+_G.Maclib = Maclib
 return Maclib
