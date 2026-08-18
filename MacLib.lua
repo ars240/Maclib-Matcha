@@ -23,8 +23,18 @@ local Maclib = {
     Open = true,
     ConfigFolder = "MaclibConfigs",
     HotkeysEnabled = false,
-    WatermarkEnabled = true
+    WatermarkEnabled = true,
+    Delta = 0.016
 }
+
+local function Approach(current, target, speed)
+    return current + (target - current) * (1 - math.exp(-speed * Maclib.Delta))
+end
+
+local function Blend(c1, c2, alpha)
+    return c1:lerp(c2, alpha)
+end
+
 
 -- Key code mapping
 local KeyNames = {
@@ -644,7 +654,12 @@ function Maclib:Window(config)
     -- RENDERING LOOP
     -- =========================================================================
     local connection
+    local lastTick = tick()
     connection = RunService.Heartbeat:Connect(function()
+        local currentTick = tick()
+        Maclib.Delta = math.min(currentTick - lastTick, 1/15)
+        lastTick = currentTick
+        
         if not win.Active then
             connection:Disconnect()
             cleanupAllDrawings()
@@ -804,11 +819,15 @@ function Maclib:Window(config)
                         local swY = itemY + 4
                         local hover = isHovering(swX - 4, swY - 2, swW + 8, swH + 4)
 
-                        drawRect(swX, swY, swW, swH, el.Value and Theme.SwitchOn or Theme.SwitchOff, true, 1, 22)
+                        el.TogglePos = Approach(el.TogglePos or (el.Value and 1 or 0), el.Value and 1 or 0, 20)
+                        local swColor = Blend(Theme.SwitchOff, Theme.SwitchOn, el.TogglePos)
+                        local knobColor = Blend(Theme.KnobOff, Theme.KnobOn, el.TogglePos)
+                        
+                        drawRect(swX, swY, swW, swH, swColor, true, 1, 22)
                         drawRect(swX, swY, swW, swH, Theme.Border, false, 1, 23)
 
-                        local knobX = el.Value and (swX + swW - 14) or (swX + 4)
-                        drawCircle(knobX + 5, swY + 9, 6, el.Value and Theme.KnobOn or Theme.KnobOff, true, 25)
+                        local knobX = swX + 4 + (el.TogglePos * (swW - 18))
+                        drawCircle(knobX + 5, swY + 9, 6, knobColor, true, 25)
 
                         if (hover or isHovering(secX + 16, itemY, colW - 32, 28)) and Input.Mouse1Clicked then
                             el:SetValue(not el.Value)
