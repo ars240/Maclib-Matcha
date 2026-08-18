@@ -83,17 +83,20 @@ local Squares = {}
 local Texts = {}
 local Lines = {}
 local Circles = {}
+local Images = {}
 
 local SqIdx = 0
 local TxtIdx = 0
 local LnIdx = 0
 local CircIdx = 0
+local ImgIdx = 0
 
 local function beginFrame()
     SqIdx = 0
     TxtIdx = 0
     LnIdx = 0
     CircIdx = 0
+    ImgIdx = 0
 end
 
 local function endFrame()
@@ -109,6 +112,9 @@ local function endFrame()
     for i = CircIdx + 1, #Circles do
         if Circles[i].Visible then Circles[i].Visible = false end
     end
+    for i = ImgIdx + 1, #Images do
+        if Images[i].Visible then Images[i].Visible = false end
+    end
 end
 
 local function cleanupAllDrawings()
@@ -116,10 +122,12 @@ local function cleanupAllDrawings()
     for _, t in ipairs(Texts) do pcall(function() t:Remove() end) end
     for _, l in ipairs(Lines) do pcall(function() l:Remove() end) end
     for _, c in ipairs(Circles) do pcall(function() c:Remove() end) end
+    for _, img in ipairs(Images) do pcall(function() img:Remove() end) end
     Squares = {}
     Texts = {}
     Lines = {}
     Circles = {}
+    Images = {}
 end
 
 local function drawRect(x, y, w, h, color, filled, thickness, zIndex)
@@ -188,6 +196,81 @@ local function drawLine(fromX, fromY, toX, toY, color, thickness, zIndex)
     l.ZIndex = zIndex or 15
     if not l.Visible then l.Visible = true end
     return l
+end
+
+local function drawImage(x, y, w, h, data, zIndex, rounding)
+    if not data then return end
+    ImgIdx = ImgIdx + 1
+    local img = Images[ImgIdx]
+    if not img then
+        img = Drawing.new("Image")
+        Images[ImgIdx] = img
+    end
+    if img._storedData ~= data then
+        img.Data = data
+        img._storedData = data
+    end
+    img.Position = Vector2.new(x, y)
+    img.Size = Vector2.new(w, h)
+    pcall(function() img.Rounding = rounding or 0 end)
+    img.ZIndex = zIndex or 15
+    if not img.Visible then img.Visible = true end
+    return img
+end
+
+local function drawIcon(name, cx, cy, size, color, z)
+    if name == "Ragebot" then
+        -- Crosshair
+        drawCircle(cx, cy, size/2, color, false, z)
+        drawLine(cx - size/2 - 2, cy, cx - 2, cy, color, 1, z)
+        drawLine(cx + 2, cy, cx + size/2 + 2, cy, color, 1, z)
+        drawLine(cx, cy - size/2 - 2, cx, cy - 2, color, 1, z)
+        drawLine(cx, cy + 2, cx, cy + size/2 + 2, color, 1, z)
+        drawCircle(cx, cy, 1, color, true, z)
+    elseif name == "Anti Aim" then
+        -- Shield
+        drawLine(cx - size/2, cy - size/2 + 2, cx + size/2, cy - size/2 + 2, color, 1.5, z)
+        drawLine(cx - size/2, cy - size/2 + 2, cx, cy + size/2, color, 1.5, z)
+        drawLine(cx + size/2, cy - size/2 + 2, cx, cy + size/2, color, 1.5, z)
+        drawCircle(cx, cy, 2, color, true, z)
+    elseif name == "Visuals" then
+        -- Eye
+        drawLine(cx - size/2, cy, cx, cy - size/2 + 2, color, 1.5, z)
+        drawLine(cx, cy - size/2 + 2, cx + size/2, cy, color, 1.5, z)
+        drawLine(cx - size/2, cy, cx, cy + size/2 - 2, color, 1.5, z)
+        drawLine(cx, cy + size/2 - 2, cx + size/2, cy, color, 1.5, z)
+        drawCircle(cx, cy, 2, color, true, z)
+    elseif name == "Skins" then
+        -- Paintbrush/Drop
+        drawCircle(cx, cy + size/4, size/3, color, false, z)
+        drawLine(cx - size/3, cy + size/4, cx, cy - size/2, color, 1, z)
+        drawLine(cx + size/3, cy + size/4, cx, cy - size/2, color, 1, z)
+    elseif name == "Misc" then
+        -- Gear
+        drawCircle(cx, cy, size/3, color, false, z)
+        drawCircle(cx, cy, 1, color, true, z)
+        drawLine(cx, cy - size/2, cx, cy - size/3, color, 2, z)
+        drawLine(cx, cy + size/3, cx, cy + size/2, color, 2, z)
+        drawLine(cx - size/2, cy, cx - size/3, cy, color, 2, z)
+        drawLine(cx + size/3, cy, cx + size/2, cy, color, 2, z)
+    elseif name == "Configs" then
+        -- Document
+        drawLine(cx - size/2 + 2, cy - size/2, cx + size/2 - 2, cy - size/2, color, 1, z)
+        drawLine(cx - size/2 + 2, cy + size/2, cx + size/2 - 2, cy + size/2, color, 1, z)
+        drawLine(cx - size/2 + 2, cy - size/2, cx - size/2 + 2, cy + size/2, color, 1, z)
+        drawLine(cx + size/2 - 2, cy - size/2, cx + size/2 - 2, cy + size/2, color, 1, z)
+        drawLine(cx - size/2 + 4, cy - 2, cx + size/2 - 4, cy - 2, color, 1, z)
+        drawLine(cx - size/2 + 4, cy + 2, cx + size/2 - 4, cy + 2, color, 1, z)
+    elseif name == "Settings" then
+        -- Slider icon
+        drawLine(cx - size/2, cy - 3, cx + size/2, cy - 3, color, 1, z)
+        drawLine(cx - size/2, cy + 3, cx + size/2, cy + 3, color, 1, z)
+        drawCircle(cx - 2, cy - 3, 2, color, true, z)
+        drawCircle(cx + 2, cy + 3, 2, color, true, z)
+    else
+        -- Fallback Square
+        drawRect(cx - size/2, cy - size/2, size, size, color, false, 1, z)
+    end
 end
 
 -- Input System
@@ -291,8 +374,8 @@ function Maclib:Window(config)
     local win = {
         Title = config.Title or "Karpiware 6.1.0",
         Subtitle = config.Subtitle or "Build - Paid (Stable) | Universal",
-        Username = config.Username or "a256",
-        UserHandle = config.UserHandle or "@a256",
+        Username = config.Username or (LocalPlayer and LocalPlayer.Name) or "a256",
+        UserHandle = config.UserHandle or (LocalPlayer and ("@" .. LocalPlayer.Name)) or "@a256",
         ConfigFolder = config.ConfigFolder or Maclib.ConfigFolder,
         ToggleKey = config.ToggleKey or 0x2D, -- Insert
         X = config.X or 180,
@@ -303,8 +386,23 @@ function Maclib:Window(config)
         ActiveTabIndex = 1,
         Dragging = false,
         DragOffset = Vector2.new(0, 0),
-        Active = true
+        Active = true,
+        AvatarData = nil
     }
+
+    if LocalPlayer and LocalPlayer.UserId > 0 then
+        task.spawn(function()
+            pcall(function()
+                local HttpService = game:GetService("HttpService")
+                local url = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(LocalPlayer.UserId) .. "&size=150x150&format=Png&isCircular=false"
+                local res = game:HttpGet(url)
+                local data = HttpService:JSONDecode(res)
+                if data and data.data and data.data[1] and data.data[1].imageUrl then
+                    win.AvatarData = game:HttpGet(data.data[1].imageUrl)
+                end
+            end)
+        end)
+    end
 
     function win:Tab(tabConfig)
         tabConfig = tabConfig or {}
@@ -608,8 +706,23 @@ function Maclib:Window(config)
         drawRect(wx, wy + 40, sidebarW, wh - 40, Theme.SidebarBg, true, 1, 12)
         drawLine(wx + sidebarW, wy, wx + sidebarW, wy + wh, Theme.Border, 1, 13)
 
-        drawText(wx + 20, wy + 44, win.Title, Theme.Text, 14, false, true, 1, 20)
-        drawText(wx + 20, wy + 62, win.Subtitle, Theme.TextDim, 11, false, true, 1, 20)
+        -- Draw Geometric Logo for Maclib
+        local logoSize = 16
+        local logoX = wx + 26
+        local logoY = wy + 54
+        local accColor = Color3.fromRGB(122, 134, 255)
+        local accDark = Color3.fromRGB(189, 130, 255)
+        -- diamond
+        drawLine(logoX, logoY - logoSize/2, logoX + logoSize/2, logoY, accColor, 2, 20)
+        drawLine(logoX + logoSize/2, logoY, logoX, logoY + logoSize/2, accDark, 2, 20)
+        drawLine(logoX, logoY + logoSize/2, logoX - logoSize/2, logoY, accDark, 2, 20)
+        drawLine(logoX - logoSize/2, logoY, logoX, logoY - logoSize/2, accColor, 2, 20)
+        -- inner cross
+        drawLine(logoX, logoY - logoSize/2, logoX, logoY + logoSize/2, Theme.TextDim, 1, 20)
+        drawLine(logoX - logoSize/2, logoY, logoX + logoSize/2, logoY, Theme.TextDim, 1, 20)
+
+        drawText(wx + 44, wy + 44, win.Title, Theme.Text, 14, false, true, 1, 20)
+        drawText(wx + 44, wy + 62, win.Subtitle, Theme.TextDim, 11, false, true, 1, 20)
 
         -- 4. Sidebar Tabs
         local tabStartY = wy + 96
@@ -621,12 +734,12 @@ function Maclib:Window(config)
             if isSelected then
                 drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.ActiveTab, true, 1, 15)
                 drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.Border, false, 1, 16)
-                drawText(wx + 30, itemY + 10, tab.Icon, Theme.Text, 12, false, true, 1, 22)
-                drawText(wx + 52, itemY + 9, tab.Name, Theme.Text, 13, false, true, 1, 22)
+                drawIcon(tab.Name, wx + 30, itemY + 17, 14, Theme.Text, 22)
+                drawText(wx + 44, itemY + 9, tab.Name, Theme.Text, 13, false, true, 1, 22)
             else
                 if hover then drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.CardBg, true, 1, 14) end
-                drawText(wx + 30, itemY + 10, tab.Icon, Theme.TextDark, 12, false, true, 1, 20)
-                drawText(wx + 52, itemY + 9, tab.Name, hover and Theme.Text or Theme.TextDim, 13, false, true, 1, 20)
+                drawIcon(tab.Name, wx + 30, itemY + 17, 14, Theme.TextDark, 20)
+                drawText(wx + 44, itemY + 9, tab.Name, hover and Theme.Text or Theme.TextDim, 13, false, true, 1, 20)
             end
 
             if hover and Input.Mouse1Clicked then
@@ -639,7 +752,14 @@ function Maclib:Window(config)
         drawLine(wx + 14, profileY, wx + sidebarW - 14, profileY, Theme.BorderSubtle, 1, 14)
         drawCircle(wx + 36, profileY + 28, 14, Theme.CardBg, true, 18)
         drawCircle(wx + 36, profileY + 28, 14, Theme.Border, false, 19)
-        drawText(wx + 36, profileY + 21, "a", Theme.Text, 13, true, true, 1, 20)
+
+        if win.AvatarData then
+            drawImage(wx + 22, profileY + 14, 28, 28, win.AvatarData, 20, 14)
+        else
+            local initial = string.sub(win.Username, 1, 1):upper()
+            drawText(wx + 36, profileY + 21, initial, Theme.Text, 13, true, true, 1, 20)
+        end
+
         drawText(wx + 58, profileY + 18, win.Username, Theme.Text, 12, false, true, 1, 20)
         drawText(wx + 58, profileY + 32, win.UserHandle, Theme.TextDark, 11, false, true, 1, 20)
 
