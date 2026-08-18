@@ -1,323 +1,332 @@
--- Maclib UI Library (Flicker-Free Persistent Drawing Engine)
--- Author: a256
+-- Maclib (Full INS-ui Architectural Parity & Feature Complete Engine)
+-- High-Performance Flicker-Free Drawing Engine for Roblox Executors (Matcha, Synapse, etc.)
 
--- Clean up any previous running instances
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Cleanup previous instance
 if _G.MaclibInstance then
     pcall(function() _G.MaclibInstance:Destroy() end)
     _G.MaclibInstance = nil
 end
 
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-
-local Camera = Workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-
 local Maclib = {
-    Version = "3.2.0",
+    Version = "4.0.0",
     Flags = {},
     Elements = {},
     Keybinds = {},
     Colors = {},
     Open = true,
     ConfigFolder = "MaclibConfigs",
-    HotkeysEnabled = false,
     WatermarkEnabled = true,
-    Delta = 0.016
+    KeybindOverlayEnabled = true,
+    BackgroundFX = "Off",
+    Delta = 0.016,
+    FPS = 60,
+    ActiveColorPicker = nil,
+    ActiveKeyMenu = nil,
+    DropdownContext = nil
 }
+_G.Maclib = Maclib
 
+-- =========================================================================
+-- THEME SYSTEM (Fully Dynamic & Modifiable at Runtime)
+-- =========================================================================
+local Theme = {
+    WindowBg = Color3.fromRGB(15, 15, 17),
+    SidebarBg = Color3.fromRGB(12, 12, 14),
+    CardBg = Color3.fromRGB(20, 20, 24),
+    ActiveTab = Color3.fromRGB(28, 28, 34),
+    Border = Color3.fromRGB(45, 45, 54),
+    BorderSubtle = Color3.fromRGB(32, 32, 38),
+    Accent = Color3.fromRGB(122, 134, 255),
+    AccentA = Color3.fromRGB(122, 134, 255),
+    AccentB = Color3.fromRGB(189, 130, 255),
+    Text = Color3.fromRGB(240, 240, 245),
+    TextDim = Color3.fromRGB(155, 155, 170),
+    TextDark = Color3.fromRGB(90, 90, 105),
+    Close = Color3.fromRGB(255, 95, 87),
+    Minimize = Color3.fromRGB(254, 188, 46),
+    Maximize = Color3.fromRGB(39, 201, 63),
+    SwitchOn = Color3.fromRGB(122, 134, 255),
+    SwitchOff = Color3.fromRGB(35, 35, 42),
+    KnobOn = Color3.fromRGB(255, 255, 255),
+    KnobOff = Color3.fromRGB(140, 140, 155),
+    ValueBox = Color3.fromRGB(26, 26, 32)
+}
+Maclib.Theme = Theme
+
+function Maclib:SetAccent(col)
+    Theme.Accent = col
+    Theme.AccentA = col
+    Theme.SwitchOn = col
+end
+
+function Maclib:SetBackground(col)
+    Theme.WindowBg = col
+end
+
+-- =========================================================================
+-- MATH & ANIMATION UTILITIES (INS-ui Lerp Engine)
+-- =========================================================================
 local function Approach(current, target, speed)
     return current + (target - current) * (1 - math.exp(-speed * Maclib.Delta))
 end
 
 local function Blend(c1, c2, alpha)
-    return c1:lerp(c2, alpha)
+    return c1:lerp(c2, math.clamp(alpha, 0, 1))
 end
 
-
--- Key code mapping
-local KeyNames = {
-    [0x00] = "None", [0x01] = "M1", [0x02] = "M2", [0x04] = "M3", [0x05] = "M4", [0x06] = "M5",
-    [0x08] = "Backspace", [0x09] = "Tab", [0x0D] = "Enter", [0x10] = "Shift",
-    [0x11] = "Ctrl", [0x12] = "Alt", [0x1B] = "Esc", [0x20] = "Space",
-    [0x21] = "PageUp", [0x22] = "PageDown", [0x23] = "End", [0x24] = "Home",
-    [0x25] = "Left", [0x26] = "Up", [0x27] = "Right", [0x28] = "Down",
-    [0x2D] = "Insert", [0x2E] = "Delete"
-}
-for i = 0x41, 0x5A do KeyNames[i] = string.char(i) end
-for i = 0x30, 0x39 do KeyNames[i] = string.char(i) end
-for i = 0x70, 0x7B do KeyNames[i] = "F" .. tostring(i - 0x6F) end
-
-local function getKeyName(code)
-    if typeof(code) == "EnumItem" then return tostring(code.Name) end
-    return KeyNames[code] or ("0x" .. string.format("%X", code or 0))
-end
-
--- Theme Palette
-local Theme = {
-    WindowBg = Color3.fromRGB(18, 18, 20),
-    SidebarBg = Color3.fromRGB(22, 22, 25),
-    CardBg = Color3.fromRGB(28, 28, 32),
-    CardHover = Color3.fromRGB(34, 34, 38),
-    Border = Color3.fromRGB(42, 42, 48),
-    BorderSubtle = Color3.fromRGB(35, 35, 40),
-    
-    Text = Color3.fromRGB(240, 240, 243),
-    TextDim = Color3.fromRGB(150, 150, 158),
-    TextDark = Color3.fromRGB(90, 90, 98),
-    
-    -- macOS Traffic Lights
-    Close = Color3.fromRGB(255, 95, 86),
-    Minimize = Color3.fromRGB(255, 189, 46),
-    Maximize = Color3.fromRGB(39, 201, 63),
-    
-    -- Controls
-    SwitchOff = Color3.fromRGB(48, 48, 54),
-    SwitchOn = Color3.fromRGB(240, 240, 243),
-    KnobOn = Color3.fromRGB(20, 20, 22),
-    KnobOff = Color3.fromRGB(180, 180, 185),
-    
-    SliderTrack = Color3.fromRGB(48, 48, 54),
-    SliderFill = Color3.fromRGB(220, 220, 225),
-    
-    ValueBox = Color3.fromRGB(36, 36, 42),
-    ActiveTab = Color3.fromRGB(32, 32, 36),
-    PopupBg = Color3.fromRGB(24, 24, 28)
+-- =========================================================================
+-- PERSISTENT DRAWING OBJECT POOL (Flicker-Free Engine)
+-- =========================================================================
+local Pool = {
+    Squares = {},
+    Texts = {},
+    Lines = {},
+    Circles = {},
+    Triangles = {},
+    Images = {}
 }
 
--- =========================================================================
--- FLICKER-FREE PERSISTENT DRAWING POOL
--- =========================================================================
-local Squares = {}
-local Texts = {}
-local Lines = {}
-local Circles = {}
-local Images = {}
-
-local SqIdx = 0
-local TxtIdx = 0
-local LnIdx = 0
-local CircIdx = 0
-local ImgIdx = 0
+local Idx = { Sq = 0, Tx = 0, Ln = 0, Cr = 0, Tr = 0, Im = 0 }
 
 local function beginFrame()
-    SqIdx = 0
-    TxtIdx = 0
-    LnIdx = 0
-    CircIdx = 0
-    ImgIdx = 0
+    Idx.Sq = 0
+    Idx.Tx = 0
+    Idx.Ln = 0
+    Idx.Cr = 0
+    Idx.Tr = 0
+    Idx.Im = 0
 end
 
 local function endFrame()
-    for i = SqIdx + 1, #Squares do
-        if Squares[i].Visible then Squares[i].Visible = false end
-    end
-    for i = TxtIdx + 1, #Texts do
-        if Texts[i].Visible then Texts[i].Visible = false end
-    end
-    for i = LnIdx + 1, #Lines do
-        if Lines[i].Visible then Lines[i].Visible = false end
-    end
-    for i = CircIdx + 1, #Circles do
-        if Circles[i].Visible then Circles[i].Visible = false end
-    end
-    for i = ImgIdx + 1, #Images do
-        if Images[i].Visible then Images[i].Visible = false end
-    end
+    for i = Idx.Sq + 1, #Pool.Squares do Pool.Squares[i].Visible = false end
+    for i = Idx.Tx + 1, #Pool.Texts do Pool.Texts[i].Visible = false end
+    for i = Idx.Ln + 1, #Pool.Lines do Pool.Lines[i].Visible = false end
+    for i = Idx.Cr + 1, #Pool.Circles do Pool.Circles[i].Visible = false end
+    for i = Idx.Tr + 1, #Pool.Triangles do Pool.Triangles[i].Visible = false end
+    for i = Idx.Im + 1, #Pool.Images do Pool.Images[i].Visible = false end
 end
 
 local function cleanupAllDrawings()
-    for _, s in ipairs(Squares) do pcall(function() s:Remove() end) end
-    for _, t in ipairs(Texts) do pcall(function() t:Remove() end) end
-    for _, l in ipairs(Lines) do pcall(function() l:Remove() end) end
-    for _, c in ipairs(Circles) do pcall(function() c:Remove() end) end
-    for _, img in ipairs(Images) do pcall(function() img:Remove() end) end
-    Squares = {}
-    Texts = {}
-    Lines = {}
-    Circles = {}
-    Images = {}
+    for _, list in pairs(Pool) do
+        for _, obj in ipairs(list) do
+            pcall(function() obj.Visible = false; obj:Remove() end)
+        end
+    end
+    Pool = { Squares = {}, Texts = {}, Lines = {}, Circles = {}, Triangles = {}, Images = {} }
 end
 
-local function drawRect(x, y, w, h, color, filled, thickness, zIndex)
-    SqIdx = SqIdx + 1
-    local s = Squares[SqIdx]
-    if not s then
-        s = Drawing.new("Square")
-        Squares[SqIdx] = s
+local function drawRect(x, y, w, h, col, filled, trans, z)
+    Idx.Sq = Idx.Sq + 1
+    local obj = Pool.Squares[Idx.Sq]
+    if not obj then
+        obj = Drawing.new("Square")
+        Pool.Squares[Idx.Sq] = obj
     end
-    s.Position = Vector2.new(x, y)
-    s.Size = Vector2.new(w, h)
-    s.Color = color
-    s.Filled = (filled == nil and true or filled)
-    s.Thickness = thickness or 1
-    s.ZIndex = zIndex or 10
-    if not s.Visible then s.Visible = true end
-    return s
+    obj.Position = Vector2.new(x, y)
+    obj.Size = Vector2.new(w, h)
+    obj.Color = col or Color3.new(1, 1, 1)
+    obj.Filled = (filled ~= false)
+    obj.Thickness = 1
+    obj.Transparency = trans or 1
+    obj.ZIndex = z or 10
+    obj.Visible = true
+    return obj
 end
 
-local function drawCircle(x, y, radius, color, filled, zIndex)
-    CircIdx = CircIdx + 1
-    local c = Circles[CircIdx]
-    if not c then
-        c = Drawing.new("Circle")
-        Circles[CircIdx] = c
+local function drawText(x, y, str, col, size, center, outline, trans, z)
+    Idx.Tx = Idx.Tx + 1
+    local obj = Pool.Texts[Idx.Tx]
+    if not obj then
+        obj = Drawing.new("Text")
+        Pool.Texts[Idx.Tx] = obj
     end
-    c.Position = Vector2.new(x, y)
-    c.Radius = radius
-    c.Color = color
-    c.Filled = (filled == nil and true or filled)
-    c.ZIndex = zIndex or 15
-    if not c.Visible then c.Visible = true end
-    return c
+    obj.Position = Vector2.new(x, y)
+    obj.Text = tostring(str or "")
+    obj.Color = col or Theme.Text
+    obj.Size = size or 13
+    obj.Center = (center == true)
+    obj.Outline = (outline ~= false)
+    obj.OutlineColor = Color3.fromRGB(10, 10, 12)
+    obj.Transparency = trans or 1
+    obj.ZIndex = z or 20
+    obj.Visible = true
+    return obj
 end
 
-local function drawText(x, y, text, color, size, center, outline, font, zIndex)
-    TxtIdx = TxtIdx + 1
-    local t = Texts[TxtIdx]
-    if not t then
-        t = Drawing.new("Text")
-        Texts[TxtIdx] = t
+local function drawLine(fromX, fromY, toX, toY, col, thickness, trans, z)
+    Idx.Ln = Idx.Ln + 1
+    local obj = Pool.Lines[Idx.Ln]
+    if not obj then
+        obj = Drawing.new("Line")
+        Pool.Lines[Idx.Ln] = obj
     end
-    t.Position = Vector2.new(x, y)
-    t.Text = tostring(text or "")
-    t.Color = color or Theme.Text
-    t.Size = size or 13
-    t.Center = center or false
-    t.Outline = (outline == nil and true or outline)
-    t.Font = font or Drawing.Fonts.System or 1
-    t.ZIndex = zIndex or 20
-    if not t.Visible then t.Visible = true end
-    return t
+    obj.From = Vector2.new(fromX, fromY)
+    obj.To = Vector2.new(toX, toY)
+    obj.Color = col or Theme.Accent
+    obj.Thickness = thickness or 1
+    obj.Transparency = trans or 1
+    obj.ZIndex = z or 15
+    obj.Visible = true
+    return obj
 end
 
-local function drawLine(fromX, fromY, toX, toY, color, thickness, zIndex)
-    LnIdx = LnIdx + 1
-    local l = Lines[LnIdx]
-    if not l then
-        l = Drawing.new("Line")
-        Lines[LnIdx] = l
+local function drawCircle(x, y, radius, col, filled, z, trans)
+    Idx.Cr = Idx.Cr + 1
+    local obj = Pool.Circles[Idx.Cr]
+    if not obj then
+        obj = Drawing.new("Circle")
+        Pool.Circles[Idx.Cr] = obj
     end
-    l.From = Vector2.new(fromX, fromY)
-    l.To = Vector2.new(toX, toY)
-    l.Color = color or Theme.Border
-    l.Thickness = thickness or 1
-    l.ZIndex = zIndex or 15
-    if not l.Visible then l.Visible = true end
-    return l
+    obj.Position = Vector2.new(x, y)
+    obj.Radius = radius or 5
+    obj.Color = col or Theme.Accent
+    obj.Filled = (filled ~= false)
+    obj.Thickness = 1
+    obj.Transparency = trans or 1
+    obj.ZIndex = z or 25
+    obj.Visible = true
+    return obj
 end
 
-local function drawImage(x, y, w, h, data, zIndex, rounding)
-    if not data then return end
-    ImgIdx = ImgIdx + 1
-    local img = Images[ImgIdx]
-    if not img then
-        img = Drawing.new("Image")
-        Images[ImgIdx] = img
+local function drawImage(x, y, w, h, data, trans, z)
+    Idx.Im = Idx.Im + 1
+    local obj = Pool.Images[Idx.Im]
+    if not obj then
+        local success, newObj = pcall(function() return Drawing.new("Image") end)
+        if success and newObj then
+            obj = newObj
+            Pool.Images[Idx.Im] = obj
+        else
+            return nil
+        end
     end
-    if img._storedData ~= data then
-        img.Data = data
-        img._storedData = data
-    end
-    img.Position = Vector2.new(x, y)
-    img.Size = Vector2.new(w, h)
-    pcall(function() img.Rounding = rounding or 0 end)
-    img.ZIndex = zIndex or 15
-    if not img.Visible then img.Visible = true end
-    return img
+    obj.Position = Vector2.new(x, y)
+    obj.Size = Vector2.new(w, h)
+    if data then obj.Data = data end
+    obj.Transparency = trans or 1
+    obj.ZIndex = z or 20
+    obj.Visible = true
+    return obj
 end
 
+-- Custom Vector Icons
 local function drawIcon(name, cx, cy, size, color, z)
+    local r = (size or 14) / 2
+    local col = color or Theme.Text
+    local zi = z or 20
+
     if name == "Ragebot" then
-        -- Crosshair
-        drawCircle(cx, cy, size/2, color, false, z)
-        drawLine(cx - size/2 - 2, cy, cx - 2, cy, color, 1, z)
-        drawLine(cx + 2, cy, cx + size/2 + 2, cy, color, 1, z)
-        drawLine(cx, cy - size/2 - 2, cx, cy - 2, color, 1, z)
-        drawLine(cx, cy + 2, cx, cy + size/2 + 2, color, 1, z)
-        drawCircle(cx, cy, 1, color, true, z)
+        drawCircle(cx, cy, r, col, false, zi)
+        drawCircle(cx, cy, 2, col, true, zi)
+        drawLine(cx - r - 2, cy, cx - 2, cy, col, 1, 1, zi)
+        drawLine(cx + 2, cy, cx + r + 2, cy, col, 1, 1, zi)
+        drawLine(cx, cy - r - 2, cx, cy - 2, col, 1, 1, zi)
+        drawLine(cx, cy + 2, cx, cy + r + 2, col, 1, 1, zi)
     elseif name == "Anti Aim" then
-        -- Shield
-        drawLine(cx - size/2, cy - size/2 + 2, cx + size/2, cy - size/2 + 2, color, 1.5, z)
-        drawLine(cx - size/2, cy - size/2 + 2, cx, cy + size/2, color, 1.5, z)
-        drawLine(cx + size/2, cy - size/2 + 2, cx, cy + size/2, color, 1.5, z)
-        drawCircle(cx, cy, 2, color, true, z)
+        drawLine(cx - r, cy - r + 2, cx + r, cy - r + 2, col, 1.5, 1, zi)
+        drawLine(cx - r, cy - r + 2, cx - r, cy, col, 1.5, 1, zi)
+        drawLine(cx + r, cy - r + 2, cx + r, cy, col, 1.5, 1, zi)
+        drawLine(cx - r, cy, cx, cy + r, col, 1.5, 1, zi)
+        drawLine(cx + r, cy, cx, cy + r, col, 1.5, 1, zi)
     elseif name == "Visuals" then
-        -- Eye
-        drawLine(cx - size/2, cy, cx, cy - size/2 + 2, color, 1.5, z)
-        drawLine(cx, cy - size/2 + 2, cx + size/2, cy, color, 1.5, z)
-        drawLine(cx - size/2, cy, cx, cy + size/2 - 2, color, 1.5, z)
-        drawLine(cx, cy + size/2 - 2, cx + size/2, cy, color, 1.5, z)
-        drawCircle(cx, cy, 2, color, true, z)
+        drawLine(cx - r - 1, cy, cx, cy - r + 2, col, 1.5, 1, zi)
+        drawLine(cx, cy - r + 2, cx + r + 1, cy, col, 1.5, 1, zi)
+        drawLine(cx - r - 1, cy, cx, cy + r - 2, col, 1.5, 1, zi)
+        drawLine(cx, cy + r - 2, cx + r + 1, cy, col, 1.5, 1, zi)
+        drawCircle(cx, cy, 3, col, true, zi)
     elseif name == "Skins" then
-        -- Paintbrush/Drop
-        drawCircle(cx, cy + size/4, size/3, color, false, z)
-        drawLine(cx - size/3, cy + size/4, cx, cy - size/2, color, 1, z)
-        drawLine(cx + size/3, cy + size/4, cx, cy - size/2, color, 1, z)
-    elseif name == "Misc" then
-        -- Gear
-        drawCircle(cx, cy, size/3, color, false, z)
-        drawCircle(cx, cy, 1, color, true, z)
-        drawLine(cx, cy - size/2, cx, cy - size/3, color, 2, z)
-        drawLine(cx, cy + size/3, cx, cy + size/2, color, 2, z)
-        drawLine(cx - size/2, cy, cx - size/3, cy, color, 2, z)
-        drawLine(cx + size/3, cy, cx + size/2, cy, color, 2, z)
+        drawLine(cx - r + 3, cy - r + 3, cx + r - 2, cy + r - 2, col, 2, 1, zi)
+        drawCircle(cx - r + 2, cy - r + 2, 3, col, true, zi)
     elseif name == "Configs" then
-        -- Document
-        drawLine(cx - size/2 + 2, cy - size/2, cx + size/2 - 2, cy - size/2, color, 1, z)
-        drawLine(cx - size/2 + 2, cy + size/2, cx + size/2 - 2, cy + size/2, color, 1, z)
-        drawLine(cx - size/2 + 2, cy - size/2, cx - size/2 + 2, cy + size/2, color, 1, z)
-        drawLine(cx + size/2 - 2, cy - size/2, cx + size/2 - 2, cy + size/2, color, 1, z)
-        drawLine(cx - size/2 + 4, cy - 2, cx + size/2 - 4, cy - 2, color, 1, z)
-        drawLine(cx - size/2 + 4, cy + 2, cx + size/2 - 4, cy + 2, color, 1, z)
+        drawRect(cx - r + 2, cy - r, (r * 2) - 4, r * 2, col, false, 1, zi)
+        drawLine(cx - r + 4, cy - r + 4, cx + r - 4, cy - r + 4, col, 1, 1, zi)
+        drawLine(cx - r + 4, cy, cx + r - 4, cy, col, 1, 1, zi)
     elseif name == "Settings" then
-        -- Slider icon
-        drawLine(cx - size/2, cy - 3, cx + size/2, cy - 3, color, 1, z)
-        drawLine(cx - size/2, cy + 3, cx + size/2, cy + 3, color, 1, z)
-        drawCircle(cx - 2, cy - 3, 2, color, true, z)
-        drawCircle(cx + 2, cy + 3, 2, color, true, z)
+        drawCircle(cx, cy, r - 1, col, false, zi)
+        drawCircle(cx, cy, 2.5, col, true, zi)
+        for ang = 0, 315, 45 do
+            local rad = math.rad(ang)
+            local sx = cx + math.cos(rad) * (r - 2)
+            local sy = cy + math.sin(rad) * (r - 2)
+            local ex = cx + math.cos(rad) * (r + 2)
+            local ey = cy + math.sin(rad) * (r + 2)
+            drawLine(sx, sy, ex, ey, col, 1.5, 1, zi)
+        end
     else
-        -- Fallback Square
-        drawRect(cx - size/2, cy - size/2, size, size, color, false, 1, z)
+        drawCircle(cx, cy, r - 2, col, false, zi)
+        drawCircle(cx, cy, 2, col, true, zi)
     end
 end
 
--- Input System
+-- =========================================================================
+-- INPUT HANDLING
+-- =========================================================================
 local Input = {
     MousePos = Vector2.new(0, 0),
     Mouse1Down = false,
-    Mouse2Down = false,
     Mouse1Clicked = false,
+    Mouse2Down = false,
     Mouse2Clicked = false,
-    ActiveDropdown = nil,
+    PrevMouse1 = false,
+    PrevMouse2 = false,
     KeyListeningObj = nil
 }
 
-local prevM1 = false
-local prevM2 = false
+local function isHovering(x, y, w, h)
+    local mx, my = Input.MousePos.X, Input.MousePos.Y
+    return mx >= x and mx <= x + w and my >= y and my <= y + h
+end
+
+local KeyNames = {
+    [0x01] = "M1", [0x02] = "M2", [0x04] = "M3", [0x08] = "Back", [0x09] = "Tab",
+    [0x0D] = "Enter", [0x10] = "Shift", [0x11] = "Ctrl", [0x12] = "Alt",
+    [0x1B] = "Esc", [0x20] = "Space", [0x2D] = "Insert", [0x2E] = "Delete",
+    [0x70] = "F1", [0x71] = "F2", [0x72] = "F3", [0x73] = "F4", [0x74] = "F5",
+    [0x75] = "F6", [0x76] = "F7", [0x77] = "F8", [0x78] = "F9", [0x79] = "F10",
+    [0x7A] = "F11", [0x7B] = "F12"
+}
+
+local function getKeyName(key)
+    if not key or key == 0 then return "None" end
+    if KeyNames[key] then return KeyNames[key] end
+    if key >= 0x41 and key <= 0x5A then return string.char(key) end
+    if key >= 0x30 and key <= 0x39 then return string.char(key) end
+    return "0x" .. string.format("%X", key)
+end
 
 local function updateInput()
+    local mouse = (UserInputService:GetMouseLocation and UserInputService:GetMouseLocation()) or Vector2.new(0,0)
+    Input.MousePos = mouse
+
     local m1 = ismouse1pressed and ismouse1pressed() or false
     local m2 = ismouse2pressed and ismouse2pressed() or false
 
-    Input.Mouse1Clicked = (m1 and not prevM1)
-    Input.Mouse2Clicked = (m2 and not prevM2)
+    Input.Mouse1Clicked = m1 and not Input.PrevMouse1
     Input.Mouse1Down = m1
+    Input.PrevMouse1 = m1
 
-    prevM1 = m1
-    prevM2 = m2
-
-    if LocalPlayer and LocalPlayer:GetMouse() then
-        local mouse = LocalPlayer:GetMouse()
-        Input.MousePos = Vector2.new(mouse.X, mouse.Y)
-    end
+    Input.Mouse2Clicked = m2 and not Input.PrevMouse2
+    Input.Mouse2Down = m2
+    Input.PrevMouse2 = m2
 
     if Input.KeyListeningObj and iskeypressed then
-        for vk = 0x01, 0xFE do
-            if iskeypressed(vk) then
-                if vk == 0x1B then Input.KeyListeningObj:SetKey(0x00)
-                else Input.KeyListeningObj:SetKey(vk) end
+        for k = 1, 255 do
+            if iskeypressed(k) then
+                if k == 0x1B then
+                    Input.KeyListeningObj.Key = 0
+                else
+                    Input.KeyListeningObj.Key = k
+                end
+                Input.KeyListeningObj.Listening = false
+                if Input.KeyListeningObj.Callback then
+                    Input.KeyListeningObj.Callback(Input.KeyListeningObj.Key)
+                end
                 Input.KeyListeningObj = nil
                 break
             end
@@ -325,112 +334,311 @@ local function updateInput()
     end
 end
 
-local function isHovering(x, y, w, h)
-    local mx, my = Input.MousePos.X, Input.MousePos.Y
-    return (mx >= x and mx <= x + w and my >= y and my <= y + h)
-end
-
 -- =========================================================================
--- NOTIFICATIONS
+-- BACKGROUND PARTICLES ENGINE (Snow, Stars, Matrix)
 -- =========================================================================
-local Notifications = {}
-
-function Maclib:Notify(options)
-    table.insert(Notifications, {
-        Title = options.Title or "Maclib",
-        Description = options.Description or "",
-        Duration = options.Lifetime or options.Duration or 3.5,
-        CreatedAt = tick()
+local Particles = {}
+for i = 1, 60 do
+    table.insert(Particles, {
+        X = math.random(0, 1920),
+        Y = math.random(0, 1080),
+        Speed = math.random(25, 90),
+        Size = math.random(2, 4),
+        Alpha = math.random(30, 90) / 100,
+        Drift = (math.random() - 0.5) * 20,
+        Char = string.char(math.random(65, 90))
     })
 end
 
-local function renderNotifications()
-    local vpX = Camera and Camera.ViewportSize.X or 1920
-    local vpY = Camera and Camera.ViewportSize.Y or 1080
-    local startY = vpY - 60
-    local now = tick()
+local function drawBackgroundFX()
+    local mode = Maclib.BackgroundFX
+    if not mode or mode == "Off" then return end
 
+    local dt = Maclib.Delta
+    for _, p in ipairs(Particles) do
+        p.Y = p.Y + (p.Speed * dt)
+        p.X = p.X + (p.Drift * dt)
+        if p.Y > 1080 then p.Y = 0; p.X = math.random(0, 1920) end
+        if p.X > 1920 then p.X = 0 elseif p.X < 0 then p.X = 1920 end
+
+        if mode == "Snow" then
+            drawCircle(p.X, p.Y, p.Size, Color3.fromRGB(240, 245, 255), true, 2, p.Alpha)
+        elseif mode == "Stars" then
+            local pulse = math.abs(math.sin(tick() * 2 + p.X))
+            drawCircle(p.X, p.Y, p.Size - 1, Color3.fromRGB(255, 255, 220), true, 2, pulse * p.Alpha)
+        elseif mode == "Matrix" then
+            drawText(p.X, p.Y, p.Char, Color3.fromRGB(50, 255, 120), 12, true, false, p.Alpha, 2)
+            drawLine(p.X, p.Y - 8, p.X, p.Y + 8, Color3.fromRGB(30, 200, 80), 1, p.Alpha * 0.5, 2)
+        end
+    end
+end
+
+-- =========================================================================
+-- WATERMARK & OVERLAYS
+-- =========================================================================
+local function drawWatermark(win)
+    if not Maclib.WatermarkEnabled then return end
+    local user = (LocalPlayer and LocalPlayer.Name) or win.Username or "User"
+    local text = string.format("%s | %s | %d FPS", win.Title or "Maclib", user, math.floor(Maclib.FPS))
+    local w = (#text * 7.5) + 24
+    local h = 26
+    local x, y = 20, 20
+
+    drawRect(x, y, w, h, Theme.WindowBg, true, 0.9, 50)
+    drawRect(x, y, w, h, Theme.Border, false, 1, 51)
+    drawLine(x, y, x + w, y, Theme.Accent, 2, 1, 52)
+    drawText(x + 12, y + 6, text, Theme.Text, 12, false, true, 1, 53)
+end
+
+-- Draggable Hotkey HUD
+local HotkeyHUD = { X = 20, Y = 60, Width = 180, Dragging = false, DragOffset = Vector2.new(0, 0) }
+
+local function drawHotkeyOverlay()
+    if not Maclib.KeybindOverlayEnabled then return end
+
+    local activeBinds = {}
+    for _, kb in pairs(Maclib.Keybinds) do
+        if kb.Key and kb.Key ~= 0 then
+            table.insert(activeBinds, kb)
+        end
+    end
+
+    local h = 32 + (#activeBinds * 22)
+    if #activeBinds == 0 then h = 50 end
+    local x, y = HotkeyHUD.X, HotkeyHUD.Y
+    local w = HotkeyHUD.Width
+
+    -- Dragging logic
+    if Input.Mouse1Clicked and isHovering(x, y, w, 24) then
+        HotkeyHUD.Dragging = true
+        HotkeyHUD.DragOffset = Vector2.new(Input.MousePos.X - x, Input.MousePos.Y - y)
+    end
+    if HotkeyHUD.Dragging then
+        if Input.Mouse1Down then
+            HotkeyHUD.X = Input.MousePos.X - HotkeyHUD.DragOffset.X
+            HotkeyHUD.Y = Input.MousePos.Y - HotkeyHUD.DragOffset.Y
+            x, y = HotkeyHUD.X, HotkeyHUD.Y
+        else
+            HotkeyHUD.Dragging = false
+        end
+    end
+
+    drawRect(x, y, w, h, Theme.WindowBg, true, 0.9, 60)
+    drawRect(x, y, w, h, Theme.Border, false, 1, 61)
+    drawLine(x, y, x + w, y, Theme.Accent, 2, 1, 62)
+    drawText(x + 10, y + 6, "Keybinds", Theme.Text, 12, false, true, 1, 63)
+
+    if #activeBinds == 0 then
+        drawText(x + (w / 2), y + 28, "No Active Keybinds", Theme.TextDark, 11, true, true, 1, 63)
+    else
+        local curY = y + 28
+        for _, kb in ipairs(activeBinds) do
+            local isActive = kb.Active
+            local dotCol = isActive and Theme.Accent or Theme.TextDark
+            drawCircle(x + 12, curY + 6, 3.5, dotCol, true, 64)
+            drawText(x + 22, curY, kb.Name, isActive and Theme.Text or Theme.TextDim, 11, false, true, 1, 64)
+
+            local kStr = string.format("[%s]", getKeyName(kb.Key))
+            drawText(x + w - 10, curY, kStr, Theme.TextDark, 11, false, true, 1, 64)
+            curY = curY + 22
+        end
+    end
+end
+
+-- Keybind Processing Loop
+local function runKeybinds()
+    if not iskeypressed then return end
+    for _, kb in pairs(Maclib.Keybinds) do
+        if kb.Key and kb.Key ~= 0 then
+            local isDown = iskeypressed(kb.Key)
+            if kb.Mode == "Toggle" then
+                if isDown and not kb.WasDown then
+                    kb.Active = not kb.Active
+                    if kb.ToggleObj then kb.ToggleObj:SetValue(kb.Active) end
+                end
+            elseif kb.Mode == "Hold" then
+                kb.Active = isDown
+                if kb.ToggleObj then kb.ToggleObj:SetValue(kb.Active) end
+            elseif kb.Mode == "Always" then
+                kb.Active = true
+                if kb.ToggleObj and not kb.ToggleObj.Value then kb.ToggleObj:SetValue(true) end
+            end
+            kb.WasDown = isDown
+        end
+    end
+end
+
+-- Interactive Color Picker Modal
+local function drawActiveColorPicker()
+    local cp = Maclib.ActiveColorPicker
+    if not cp then return end
+
+    local w, h = 180, 160
+    local x, y = cp.X or 400, cp.Y or 300
+
+    -- Background
+    drawRect(x, y, w, h, Theme.WindowBg, true, 1, 90)
+    drawRect(x, y, w, h, Theme.Border, false, 1, 91)
+    drawLine(x, y, x + w, y, Theme.Accent, 2, 1, 92)
+    drawText(x + 10, y + 8, cp.Name or "Color Picker", Theme.Text, 12, false, true, 1, 93)
+
+    -- Current Color Preview Box
+    drawRect(x + w - 34, y + 6, 24, 16, cp.Value, true, 1, 93)
+    drawRect(x + w - 34, y + 6, 24, 16, Theme.Border, false, 1, 94)
+
+    -- RGB Sliders
+    local channels = {
+        { Name = "R", Val = math.floor(cp.Value.R * 255), Col = Color3.fromRGB(255, 80, 80) },
+        { Name = "G", Val = math.floor(cp.Value.G * 255), Col = Color3.fromRGB(80, 255, 80) },
+        { Name = "B", Val = math.floor(cp.Value.B * 255), Col = Color3.fromRGB(80, 120, 255) }
+    }
+
+    local sliderY = y + 34
+    for idx, ch in ipairs(channels) do
+        drawText(x + 12, sliderY, ch.Name, ch.Col, 11, false, true, 1, 93)
+        drawText(x + w - 12, sliderY, tostring(ch.Val), Theme.TextDim, 11, false, true, 1, 93)
+
+        local barX = x + 30
+        local barW = w - 65
+        local barY = sliderY + 12
+        local ratio = ch.Val / 255
+
+        drawRect(barX, barY, barW, 4, Theme.ValueBox, true, 1, 93)
+        drawRect(barX, barY, barW * ratio, 4, ch.Col, true, 1, 94)
+        drawCircle(barX + (barW * ratio), barY + 2, 4, Theme.Text, true, 95)
+
+        if Input.Mouse1Down and isHovering(barX - 4, barY - 6, barW + 8, 16) then
+            local newRatio = math.clamp((Input.MousePos.X - barX) / barW, 0, 1)
+            local r, g, b = cp.Value.R, cp.Value.G, cp.Value.B
+            if idx == 1 then r = newRatio
+            elseif idx == 2 then g = newRatio
+            elseif idx == 3 then b = newRatio end
+            cp:SetValue(Color3.new(r, g, b))
+        end
+
+        sliderY = sliderY + 26
+    end
+
+    -- Close Button
+    local btnY = sliderY + 8
+    local hoverClose = isHovering(x + 12, btnY, w - 24, 22)
+    drawRect(x + 12, btnY, w - 24, 22, hoverClose and Theme.ActiveTab or Theme.CardBg, true, 1, 93)
+    drawRect(x + 12, btnY, w - 24, 22, Theme.Border, false, 1, 94)
+    drawText(x + (w / 2), btnY + 4, "Close", Theme.Text, 11, true, true, 1, 95)
+
+    if hoverClose and Input.Mouse1Clicked then
+        Maclib.ActiveColorPicker = nil
+    end
+
+    if Input.Mouse1Clicked and not isHovering(x, y, w, h) and not isHovering(x - 30, y - 30, w + 60, h + 60) then
+        Maclib.ActiveColorPicker = nil
+    end
+end
+
+-- =========================================================================
+-- NOTIFICATION SYSTEM
+-- =========================================================================
+local Notifications = {}
+function Maclib:Notify(config)
+    local n = {
+        Title = config.Title or "Notification",
+        Description = config.Description or "",
+        Duration = config.Duration or 3,
+        TimeCreated = tick(),
+        Fade = 0
+    }
+    table.insert(Notifications, n)
+end
+
+local function renderNotifications()
+    local curY = 40
     local i = 1
     while i <= #Notifications do
         local n = Notifications[i]
-        local elapsed = now - n.CreatedAt
-        if elapsed >= n.Duration then
+        local elapsed = tick() - n.TimeCreated
+        if elapsed > n.Duration then
             table.remove(Notifications, i)
         else
-            local remain = math.max(0, 1 - (elapsed / n.Duration))
-            local w = 260
-            local h = 52
-            local x = vpX - w - 24
-            local y = startY - ((i - 1) * (h + 10))
+            n.Fade = Approach(n.Fade, 1, 15)
+            local w = 240
+            local h = 50
+            local x = 1920 - w - 24
+            local y = curY
 
-            drawRect(x, y, w, h, Theme.WindowBg, true, 1, 900)
-            drawRect(x, y, w, h, Theme.Border, false, 1, 901)
-            drawRect(x, y, 3, h, Theme.SwitchOn, true, 1, 902)
+            drawRect(x, y, w, h, Theme.WindowBg, true, 0.95 * n.Fade, 100)
+            drawRect(x, y, w, h, Theme.Border, false, n.Fade, 101)
+            drawLine(x, y, x + w, y, Theme.Accent, 2, n.Fade, 102)
+            drawText(x + 12, y + 8, n.Title, Theme.Text, 12, false, true, n.Fade, 103)
+            drawText(x + 12, y + 24, n.Description, Theme.TextDim, 11, false, true, n.Fade, 103)
 
-            drawText(x + 12, y + 8, n.Title, Theme.Text, 13, false, true, 1, 905)
-            drawText(x + 12, y + 26, n.Description, Theme.TextDim, 12, false, true, 1, 905)
-            drawRect(x + 3, y + h - 2, (w - 6) * remain, 2, Theme.SwitchOn, true, 1, 906)
-
+            curY = curY + h + 10
             i = i + 1
         end
     end
 end
 
 -- =========================================================================
--- MAIN WINDOW FACTORY (100% Flicker-Free)
+-- CORE WINDOW FACTORY
 -- =========================================================================
-function Maclib:Window(config)
-    config = config or {}
+function Maclib:Window(winConfig)
     local win = {
-        Title = config.Title or "Karpiware 6.1.0",
-        Subtitle = config.Subtitle or "Build - Paid (Stable) | Universal",
-        Username = config.Username or (LocalPlayer and LocalPlayer.Name) or "a256",
-        UserHandle = config.UserHandle or (LocalPlayer and ("@" .. LocalPlayer.Name)) or "@a256",
-        ConfigFolder = config.ConfigFolder or Maclib.ConfigFolder,
-        ToggleKey = config.ToggleKey or 0x2D, -- Insert
-        X = config.X or 180,
-        Y = config.Y or 120,
-        Width = config.Width or 840,
-        Height = config.Height or 580,
-        Tabs = {},
+        Title = winConfig.Title or "Maclib",
+        Subtitle = winConfig.Subtitle or "Universal",
+        Username = (LocalPlayer and LocalPlayer.Name) or winConfig.Username or "Player",
+        UserHandle = (LocalPlayer and ("@" .. LocalPlayer.Name)) or winConfig.UserHandle or "@Player",
+        ToggleKey = winConfig.ToggleKey or 0x2D,
+        Width = winConfig.Width or 840,
+        Height = winConfig.Height or 580,
+        X = 250,
+        Y = 150,
         ActiveTabIndex = 1,
+        Tabs = {},
+        Active = true,
         Dragging = false,
         DragOffset = Vector2.new(0, 0),
-        Active = true,
         AvatarData = nil
     }
 
-    if LocalPlayer and LocalPlayer.UserId > 0 then
-        task.spawn(function()
-            pcall(function()
-                local HttpService = game:GetService("HttpService")
-                local url = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. tostring(LocalPlayer.UserId) .. "&size=150x150&format=Png&isCircular=false"
-                local res = game:HttpGet(url)
-                local data = HttpService:JSONDecode(res)
+    _G.MaclibInstance = win
+
+    -- Fetch Avatar Asynchronously
+    task.spawn(function()
+        pcall(function()
+            if LocalPlayer and LocalPlayer.UserId then
+                local url = string.format("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=150x150&format=Png&isCircular=true", LocalPlayer.UserId)
+                local resp = game:HttpGet(url)
+                local data = HttpService:JSONDecode(resp)
                 if data and data.data and data.data[1] and data.data[1].imageUrl then
-                    win.AvatarData = game:HttpGet(data.data[1].imageUrl)
+                    local imgUrl = data.data[1].imageUrl
+                    local imgBytes = game:HttpGet(imgUrl)
+                    if imgBytes and #imgBytes > 0 then
+                        win.AvatarData = imgBytes
+                    end
                 end
-            end)
+            end
         end)
+    end)
+
+    function win:Destroy()
+        win.Active = false
+        cleanupAllDrawings()
     end
 
-    function win:Tab(tabConfig)
-        tabConfig = tabConfig or {}
-        local tabName = tabConfig.Name or ("Tab " .. tostring(#win.Tabs + 1))
+    -- Tab Builder
+    function win:Tab(tConfig)
+        local tabName = tConfig.Name or "Tab"
         local tabObj = {
             Name = tabName,
-            Icon = tabConfig.Icon or "[*]",
-            Sections = {}
+            Sections = {},
+            HoverAlpha = 0
         }
 
-        function tabObj:Section(secConfig)
-            secConfig = secConfig or {}
-            local secName = secConfig.Name or "Section"
-            local side = secConfig.Side or "Left"
-
+        function tabObj:Section(sConfig)
+            local secName = sConfig.Name or "Section"
+            local secSide = sConfig.Side or "Left"
             local secObj = {
                 Name = secName,
-                Side = side,
+                Side = secSide,
                 Elements = {}
             }
 
@@ -438,19 +646,20 @@ function Maclib:Window(config)
             function secObj:Toggle(tConfig)
                 local id = tConfig.Id or (tabName .. "_" .. secName .. "_" .. (tConfig.Name or "Toggle"))
                 local label = tConfig.Name or "Toggle"
-                local default = tConfig.Default or false
+                local def = tConfig.Default or false
                 local callback = tConfig.Callback or function() end
 
                 local toggleObj = {
                     Id = id,
                     Name = label,
                     Type = "Toggle",
-                    Value = default,
-                    Callback = callback,
-                    SubElements = {}
+                    Value = def,
+                    TogglePos = def and 1 or 0,
+                    SubElements = {},
+                    Callback = callback
                 }
 
-                Maclib.Flags[id] = default
+                Maclib.Flags[id] = def
                 Maclib.Elements[id] = toggleObj
 
                 function toggleObj:SetValue(val)
@@ -464,36 +673,39 @@ function Maclib:Window(config)
                 end
 
                 function toggleObj:Keybind(kbConfig)
-                    local kbId = kbConfig.Id or (id .. "_kb")
-                    local key = kbConfig.Default or 0x00
-                    local mode = (kbConfig.Mode or "hold"):lower()
-
+                    local kbId = kbConfig.Id or (id .. "_Key")
                     local kbObj = {
                         Id = kbId,
+                        Name = label,
                         Type = "Keybind",
-                        Key = key,
-                        Mode = mode,
-                        Listening = false
+                        Key = kbConfig.Default or 0,
+                        Mode = kbConfig.Mode or "Toggle",
+                        Active = def,
+                        Listening = false,
+                        ToggleObj = toggleObj,
+                        Callback = kbConfig.Callback
                     }
-
-                    function kbObj:SetKey(newKey)
-                        kbObj.Key = newKey
-                    end
-
+                    Maclib.Keybinds[kbId] = kbObj
                     table.insert(toggleObj.SubElements, kbObj)
                     return kbObj
                 end
 
                 function toggleObj:Colorpicker(cpConfig)
-                    local cpId = cpConfig.Id or (id .. "_col")
-                    local defCol = cpConfig.Default or Color3.fromRGB(80, 140, 245)
-
+                    local cpId = cpConfig.Id or (id .. "_Color")
                     local cpObj = {
                         Id = cpId,
-                        Type = "ColorPicker",
-                        Color = defCol
+                        Name = label,
+                        Type = "Colorpicker",
+                        Value = cpConfig.Default or Color3.fromRGB(122, 134, 255),
+                        Alpha = cpConfig.Alpha or 1,
+                        Callback = cpConfig.Callback or function() end
                     }
-
+                    function cpObj:SetValue(val)
+                        cpObj.Value = val
+                        Maclib.Colors[cpId] = val
+                        if cpObj.Callback then cpObj.Callback(val) end
+                    end
+                    Maclib.Colors[cpId] = cpObj.Value
                     table.insert(toggleObj.SubElements, cpObj)
                     return cpObj
                 end
@@ -502,15 +714,42 @@ function Maclib:Window(config)
                 return toggleObj
             end
 
-            -- 2. Slider
+            -- 2. Standalone Colorpicker
+            function secObj:Colorpicker(cpConfig)
+                local id = cpConfig.Id or (tabName .. "_" .. secName .. "_" .. (cpConfig.Name or "Colorpicker"))
+                local label = cpConfig.Name or "Colorpicker"
+                local def = cpConfig.Default or Color3.fromRGB(122, 134, 255)
+                local callback = cpConfig.Callback or function() end
+
+                local cpObj = {
+                    Id = id,
+                    Name = label,
+                    Type = "Colorpicker",
+                    Value = def,
+                    Alpha = cpConfig.Alpha or 1,
+                    Callback = callback
+                }
+
+                function cpObj:SetValue(val)
+                    cpObj.Value = val
+                    Maclib.Colors[id] = val
+                    callback(val)
+                end
+
+                Maclib.Colors[id] = def
+                Maclib.Elements[id] = cpObj
+                table.insert(secObj.Elements, cpObj)
+                return cpObj
+            end
+
+            -- 3. Slider
             function secObj:Slider(sConfig)
                 local id = sConfig.Id or (tabName .. "_" .. secName .. "_" .. (sConfig.Name or "Slider"))
                 local label = sConfig.Name or "Slider"
                 local min = sConfig.Min or 0
                 local max = sConfig.Max or 100
-                local default = sConfig.Default or min
+                local def = sConfig.Default or min
                 local suffix = sConfig.Suffix or ""
-                local isFloat = sConfig.IsFloat or false
                 local callback = sConfig.Callback or function() end
 
                 local sliderObj = {
@@ -519,13 +758,14 @@ function Maclib:Window(config)
                     Type = "Slider",
                     Min = min,
                     Max = max,
-                    Value = default,
+                    Value = def,
+                    SliderAnim = (def - min) / (max - min),
                     Suffix = suffix,
-                    IsFloat = isFloat,
+                    Dragging = false,
                     Callback = callback
                 }
 
-                Maclib.Flags[id] = default
+                Maclib.Flags[id] = def
                 Maclib.Elements[id] = sliderObj
 
                 function sliderObj:SetValue(val)
@@ -535,17 +775,13 @@ function Maclib:Window(config)
                     callback(val)
                 end
 
-                function sliderObj:GetValue()
-                    return sliderObj.Value
-                end
-
                 table.insert(secObj.Elements, sliderObj)
                 return sliderObj
             end
 
-            -- 3. Range Slider
+            -- 4. RangeSlider
             function secObj:RangeSlider(rConfig)
-                local id = rConfig.Id or (tabName .. "_" .. secName .. "_" .. (rConfig.Name or "Range"))
+                local id = rConfig.Id or (tabName .. "_" .. secName .. "_" .. (rConfig.Name or "RangeSlider"))
                 local label = rConfig.Name or "Range"
                 local min = rConfig.Min or 0
                 local max = rConfig.Max or 100
@@ -583,7 +819,7 @@ function Maclib:Window(config)
                 return rangeObj
             end
 
-            -- 4. Dropdown
+            -- 5. Dropdown
             function secObj:Dropdown(dConfig)
                 local id = dConfig.Id or (tabName .. "_" .. secName .. "_" .. (dConfig.Name or "Dropdown"))
                 local label = dConfig.Name or "Dropdown"
@@ -612,21 +848,46 @@ function Maclib:Window(config)
                     callback(val)
                 end
 
-                function dropObj:GetValue()
-                    return dropObj.Value
-                end
-
                 table.insert(secObj.Elements, dropObj)
                 return dropObj
             end
 
-            -- 5. Button
+            -- 6. Button
             function secObj:Button(bConfig)
                 local label = bConfig.Name or "Button"
                 local callback = bConfig.Callback or function() end
                 local btnObj = { Name = label, Type = "Button", Callback = callback }
                 table.insert(secObj.Elements, btnObj)
                 return btnObj
+            end
+
+            -- 7. Input
+            function secObj:Input(iConfig)
+                local id = iConfig.Id or (tabName .. "_" .. secName .. "_" .. (iConfig.Name or "Input"))
+                local label = iConfig.Name or "Input"
+                local def = iConfig.Default or ""
+                local callback = iConfig.Callback or function() end
+
+                local inputObj = {
+                    Id = id,
+                    Name = label,
+                    Type = "Input",
+                    Value = def,
+                    Focused = false,
+                    Callback = callback
+                }
+
+                Maclib.Flags[id] = def
+                Maclib.Elements[id] = inputObj
+
+                function inputObj:SetValue(val)
+                    inputObj.Value = val
+                    Maclib.Flags[id] = val
+                    callback(val)
+                end
+
+                table.insert(secObj.Elements, inputObj)
+                return inputObj
             end
 
             table.insert(tabObj.Sections, secObj)
@@ -637,29 +898,40 @@ function Maclib:Window(config)
         return tabObj
     end
 
+    -- Config Section Preset
     function win:BuildConfigSection(targetTab, targetSide)
         local sec = targetTab:Section({ Name = "Configuration", Side = targetSide or "Right" })
         sec:Button({
             Name = "Save Config",
-            Callback = function() Maclib:Notify({ Title = "Config", Description = "Config Saved!" }) end
+            Callback = function() Maclib:Notify({ Title = "Config", Description = "Configuration Saved!" }) end
         })
         sec:Button({
             Name = "Load Config",
-            Callback = function() Maclib:Notify({ Title = "Config", Description = "Config Loaded!" }) end
+            Callback = function() Maclib:Notify({ Title = "Config", Description = "Configuration Loaded!" }) end
         })
         return sec
     end
 
     -- =========================================================================
-    -- RENDERING LOOP
+    -- MAIN HEARTBEAT RENDER LOOP
     -- =========================================================================
     local connection
     local lastTick = tick()
+    local frameCount = 0
+    local fpsTimer = tick()
+
     connection = RunService.Heartbeat:Connect(function()
         local currentTick = tick()
         Maclib.Delta = math.min(currentTick - lastTick, 1/15)
         lastTick = currentTick
-        
+
+        frameCount = frameCount + 1
+        if currentTick - fpsTimer >= 0.5 then
+            Maclib.FPS = frameCount / (currentTick - fpsTimer)
+            frameCount = 0
+            fpsTimer = currentTick
+        end
+
         if not win.Active then
             connection:Disconnect()
             cleanupAllDrawings()
@@ -667,10 +939,16 @@ function Maclib:Window(config)
         end
 
         updateInput()
+        runKeybinds()
         beginFrame()
 
+        -- Render Ambient Effects & Overlays (Always live)
+        drawBackgroundFX()
+        drawWatermark(win)
+        drawHotkeyOverlay()
         renderNotifications()
 
+        -- Menu Open / Close Toggle
         if win.ToggleKey and iskeypressed and iskeypressed(win.ToggleKey) then
             if not win.ToggleDebounce then
                 Maclib.Open = not Maclib.Open
@@ -716,28 +994,28 @@ function Maclib:Window(config)
         drawCircle(wx + 38, wy + 20, 5.5, Theme.Minimize, true, 20)
         drawCircle(wx + 54, wy + 20, 5.5, Theme.Maximize, true, 20)
 
-        -- 3. Left Sidebar
+        if Input.Mouse1Clicked and isHovering(wx + 16, wy + 14, 14, 14) then
+            win:Destroy()
+            endFrame()
+            return
+        end
+        if Input.Mouse1Clicked and isHovering(wx + 32, wy + 14, 14, 14) then
+            Maclib.Open = false
+        end
+
+        -- 3. Sidebar Divider & Geometric Logo
         local sidebarW = 210
-        drawRect(wx, wy + 40, sidebarW, wh - 40, Theme.SidebarBg, true, 1, 12)
-        drawLine(wx + sidebarW, wy, wx + sidebarW, wy + wh, Theme.Border, 1, 13)
+        drawLine(wx + sidebarW, wy, wx + sidebarW, wy + wh, Theme.Border, 1, 1, 12)
 
-        -- Draw Geometric Logo for Maclib
-        local logoSize = 16
-        local logoX = wx + 26
-        local logoY = wy + 54
-        local accColor = Color3.fromRGB(122, 134, 255)
-        local accDark = Color3.fromRGB(189, 130, 255)
-        -- diamond
-        drawLine(logoX, logoY - logoSize/2, logoX + logoSize/2, logoY, accColor, 2, 20)
-        drawLine(logoX + logoSize/2, logoY, logoX, logoY + logoSize/2, accDark, 2, 20)
-        drawLine(logoX, logoY + logoSize/2, logoX - logoSize/2, logoY, accDark, 2, 20)
-        drawLine(logoX - logoSize/2, logoY, logoX, logoY - logoSize/2, accColor, 2, 20)
-        -- inner cross
-        drawLine(logoX, logoY - logoSize/2, logoX, logoY + logoSize/2, Theme.TextDim, 1, 20)
-        drawLine(logoX - logoSize/2, logoY, logoX + logoSize/2, logoY, Theme.TextDim, 1, 20)
+        local logoX, logoY = wx + 30, wy + 54
+        drawLine(logoX, logoY - 8, logoX + 8, logoY, Theme.Accent, 2, 1, 20)
+        drawLine(logoX + 8, logoY, logoX, logoY + 8, Theme.Accent, 2, 1, 20)
+        drawLine(logoX, logoY + 8, logoX - 8, logoY, Theme.Accent, 2, 1, 20)
+        drawLine(logoX - 8, logoY, logoX, logoY - 8, Theme.Accent, 2, 1, 20)
+        drawCircle(logoX, logoY, 2.5, Theme.Text, true, 21)
 
-        drawText(wx + 44, wy + 44, win.Title, Theme.Text, 14, false, true, 1, 20)
-        drawText(wx + 44, wy + 62, win.Subtitle, Theme.TextDim, 11, false, true, 1, 20)
+        drawText(wx + 46, wy + 46, win.Title, Theme.Text, 14, false, true, 1, 20)
+        drawText(wx + 46, wy + 62, win.Subtitle, Theme.TextDark, 11, false, true, 1, 20)
 
         -- 4. Sidebar Tabs
         local tabStartY = wy + 96
@@ -746,33 +1024,44 @@ function Maclib:Window(config)
             local itemY = tabStartY + ((idx - 1) * 40)
             local hover = isHovering(wx + 16, itemY, sidebarW - 32, 34)
 
+            tab.HoverAlpha = Approach(tab.HoverAlpha or 0, hover and 1 or 0, 15)
+
             if isSelected then
                 drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.ActiveTab, true, 1, 15)
                 drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.Border, false, 1, 16)
                 drawIcon(tab.Name, wx + 30, itemY + 17, 14, Theme.Text, 22)
                 drawText(wx + 44, itemY + 9, tab.Name, Theme.Text, 13, false, true, 1, 22)
             else
-                if hover then drawRect(wx + 16, itemY, sidebarW - 32, 34, Theme.CardBg, true, 1, 14) end
-                drawIcon(tab.Name, wx + 30, itemY + 17, 14, Theme.TextDark, 20)
-                drawText(wx + 44, itemY + 9, tab.Name, hover and Theme.Text or Theme.TextDim, 13, false, true, 1, 20)
+                if tab.HoverAlpha > 0.01 then
+                    drawRect(wx + 16, itemY, sidebarW - 32, 34, Blend(Theme.SidebarBg, Theme.CardBg, tab.HoverAlpha), true, 1, 14)
+                end
+                local iconCol = Blend(Theme.TextDark, Theme.Text, tab.HoverAlpha)
+                local textCol = Blend(Theme.TextDim, Theme.Text, tab.HoverAlpha)
+                drawIcon(tab.Name, wx + 30, itemY + 17, 14, iconCol, 20)
+                drawText(wx + 44, itemY + 9, tab.Name, textCol, 13, false, true, 1, 20)
             end
 
             if hover and Input.Mouse1Clicked then
                 win.ActiveTabIndex = idx
+                Maclib.DropdownContext = nil
             end
         end
 
-        -- 5. User Profile Card
-        local profileY = wy + wh - 60
-        drawLine(wx + 14, profileY, wx + sidebarW - 14, profileY, Theme.BorderSubtle, 1, 14)
-        drawCircle(wx + 36, profileY + 28, 14, Theme.CardBg, true, 18)
-        drawCircle(wx + 36, profileY + 28, 14, Theme.Border, false, 19)
+        -- 5. User Profile Footer
+        local profileY = wy + wh - 64
+        drawLine(wx, profileY, wx + sidebarW, profileY, Theme.Border, 1, 1, 12)
 
+        local avatarDrawn = false
         if win.AvatarData then
-            drawImage(wx + 22, profileY + 14, 28, 28, win.AvatarData, 20, 14)
-        else
+            local img = drawImage(wx + 20, profileY + 12, 30, 30, win.AvatarData, 1, 20)
+            if img then avatarDrawn = true end
+        end
+
+        if not avatarDrawn then
+            drawCircle(wx + 35, profileY + 27, 14, Theme.CardBg, true, 18)
+            drawCircle(wx + 35, profileY + 27, 14, Theme.Border, false, 19)
             local initial = string.sub(win.Username, 1, 1):upper()
-            drawText(wx + 36, profileY + 21, initial, Theme.Text, 13, true, true, 1, 20)
+            drawText(wx + 35, profileY + 20, initial, Theme.Text, 13, true, true, 1, 20)
         end
 
         drawText(wx + 58, profileY + 18, win.Username, Theme.Text, 12, false, true, 1, 20)
@@ -787,7 +1076,6 @@ function Maclib:Window(config)
 
         if activeTab then
             drawText(contentX, contentY, activeTab.Name, Theme.TextDim, 13, false, true, 1, 20)
-            drawText(wx + ww - 32, contentY, "[+]", Theme.TextDark, 12, false, true, 1, 20)
 
             local cardTopY = contentY + 26
             local leftY = cardTopY
@@ -800,10 +1088,10 @@ function Maclib:Window(config)
 
                 local secHeight = 16
                 for _, el in ipairs(sec.Elements) do
-                    if el.Type == "Toggle" then secHeight = secHeight + 36
+                    if el.Type == "Toggle" or el.Type == "Colorpicker" then secHeight = secHeight + 36
                     elseif el.Type == "Slider" or el.Type == "RangeSlider" then secHeight = secHeight + 36
                     elseif el.Type == "Dropdown" then secHeight = secHeight + 38
-                    elseif el.Type == "Button" then secHeight = secHeight + 36 end
+                    elseif el.Type == "Button" or el.Type == "Input" then secHeight = secHeight + 36 end
                 end
 
                 drawRect(secX, curY, colW, secHeight, Theme.CardBg, true, 1, 14)
@@ -822,18 +1110,18 @@ function Maclib:Window(config)
                         el.TogglePos = Approach(el.TogglePos or (el.Value and 1 or 0), el.Value and 1 or 0, 20)
                         local swColor = Blend(Theme.SwitchOff, Theme.SwitchOn, el.TogglePos)
                         local knobColor = Blend(Theme.KnobOff, Theme.KnobOn, el.TogglePos)
-                        
+
                         drawRect(swX, swY, swW, swH, swColor, true, 1, 22)
                         drawRect(swX, swY, swW, swH, Theme.Border, false, 1, 23)
 
                         local knobX = swX + 4 + (el.TogglePos * (swW - 18))
                         drawCircle(knobX + 5, swY + 9, 6, knobColor, true, 25)
 
-                        if (hover or isHovering(secX + 16, itemY, colW - 32, 28)) and Input.Mouse1Clicked then
+                        if (hover or isHovering(secX + 16, itemY, colW - 80, 28)) and Input.Mouse1Clicked then
                             el:SetValue(not el.Value)
                         end
 
-                        -- Render Nested Keybind Chip
+                        -- Render Sub-Elements (Keybind & Colorpicker)
                         local extraOffset = swX - 8
                         for _, sub in ipairs(el.SubElements) do
                             if sub.Type == "Keybind" then
@@ -850,7 +1138,35 @@ function Maclib:Window(config)
                                     sub.Listening = true
                                     Input.KeyListeningObj = sub
                                 end
+                            elseif sub.Type == "Colorpicker" then
+                                extraOffset = extraOffset - 26
+                                local cHover = isHovering(extraOffset, itemY + 3, 20, 20)
+                                drawRect(extraOffset, itemY + 3, 20, 20, sub.Value, true, 1, 24)
+                                drawRect(extraOffset, itemY + 3, 20, 20, cHover and Theme.Text or Theme.Border, false, 1, 25)
+
+                                if cHover and Input.Mouse1Clicked then
+                                    sub.X = extraOffset - 180
+                                    sub.Y = itemY
+                                    Maclib.ActiveColorPicker = sub
+                                end
                             end
+                        end
+
+                        itemY = itemY + 36
+
+                    elseif el.Type == "Colorpicker" then
+                        drawText(secX + 16, itemY + 5, el.Name, Theme.TextDim, 12, false, true, 1, 20)
+                        local swX = secX + colW - 16 - 28
+                        local swY = itemY + 3
+                        local cHover = isHovering(swX, swY, 28, 20)
+
+                        drawRect(swX, swY, 28, 20, el.Value, true, 1, 22)
+                        drawRect(swX, swY, 28, 20, cHover and Theme.Text or Theme.Border, false, 1, 23)
+
+                        if cHover and Input.Mouse1Clicked then
+                            el.X = swX - 180
+                            el.Y = swY
+                            Maclib.ActiveColorPicker = el
                         end
 
                         itemY = itemY + 36
@@ -859,7 +1175,7 @@ function Maclib:Window(config)
                         drawText(secX + 16, itemY + 5, el.Name, Theme.TextDim, 12, false, true, 1, 20)
 
                         local valStr = tostring(el.Value) .. (el.Suffix or "")
-                        local badgeW = 34
+                        local badgeW = (#valStr * 7) + 14
                         local badgeH = 20
                         local badgeX = secX + colW - 16 - badgeW
                         local badgeY = itemY + 2
@@ -867,88 +1183,54 @@ function Maclib:Window(config)
                         drawRect(badgeX, badgeY, badgeW, badgeH, Theme.Border, false, 1, 21)
                         drawText(badgeX + (badgeW / 2), badgeY + 4, valStr, Theme.Text, 11, true, true, 1, 22)
 
-                        local trackW = 75
-                        local trackH = 3
-                        local trackX = badgeX - trackW - 12
-                        local trackY = itemY + 11
+                        local barW = colW - 32
+                        local barX = secX + 16
+                        local barY = itemY + 28
+                        local hoverBar = isHovering(barX, barY - 4, barW, 12)
+                        local ratio = (el.Value - el.Min) / (el.Max - el.Min)
 
-                        local ratio = math.clamp((el.Value - el.Min) / (el.Max - el.Min), 0, 1)
-                        drawRect(trackX, trackY, trackW, trackH, Theme.SliderTrack, true, 1, 22)
-                        drawRect(trackX, trackY, trackW * ratio, trackH, Theme.SliderFill, true, 1, 23)
+                        el.SliderAnim = Approach(el.SliderAnim or ratio, ratio, 20)
+                        local fillWidth = math.floor(el.SliderAnim * barW)
 
-                        local knobPosX = trackX + (trackW * ratio)
-                        drawCircle(knobPosX, trackY + 1.5, 5, Color3.fromRGB(255, 255, 255), true, 26)
+                        drawRect(barX, barY, barW, 4, Theme.ValueBox, true, 1, 22)
+                        drawRect(barX, barY, fillWidth, 4, Theme.Accent, true, 1, 23)
+                        drawCircle(barX + fillWidth, barY + 2, 5, Theme.Text, true, 25)
 
-                        if Input.Mouse1Down and isHovering(trackX - 6, trackY - 8, trackW + 12, trackH + 16) then
-                            local newRatio = math.clamp((Input.MousePos.X - trackX) / trackW, 0, 1)
-                            local newVal = el.Min + ((el.Max - el.Min) * newRatio)
-                            if not el.IsFloat then newVal = math.floor(newVal + 0.5) end
+                        if Input.Mouse1Down and (hoverBar or el.Dragging) then
+                            el.Dragging = true
+                            local newRatio = math.clamp((Input.MousePos.X - barX) / barW, 0, 1)
+                            local newVal = math.floor(el.Min + ((el.Max - el.Min) * newRatio) + 0.5)
                             el:SetValue(newVal)
-                        end
-
-                        itemY = itemY + 36
-
-                    elseif el.Type == "RangeSlider" then
-                        drawText(secX + 16, itemY + 5, el.Name, Theme.TextDim, 12, false, true, 1, 20)
-
-                        local rangeStr = string.format("%d-%d%s", el.Low, el.High, el.Suffix or "")
-                        local badgeW = 46
-                        local badgeH = 20
-                        local badgeX = secX + colW - 16 - badgeW
-                        local badgeY = itemY + 2
-                        drawRect(badgeX, badgeY, badgeW, badgeH, Theme.ValueBox, true, 1, 20)
-                        drawRect(badgeX, badgeY, badgeW, badgeH, Theme.Border, false, 1, 21)
-                        drawText(badgeX + (badgeW / 2), badgeY + 4, rangeStr, Theme.Text, 10, true, true, 1, 22)
-
-                        local trackW = 65
-                        local trackH = 3
-                        local trackX = badgeX - trackW - 12
-                        local trackY = itemY + 11
-
-                        local rLow = math.clamp((el.Low - el.Min) / (el.Max - el.Min), 0, 1)
-                        local rHigh = math.clamp((el.High - el.Min) / (el.Max - el.Min), 0, 1)
-
-                        drawRect(trackX, trackY, trackW, trackH, Theme.SliderTrack, true, 1, 22)
-                        drawRect(trackX + (trackW * rLow), trackY, trackW * (rHigh - rLow), trackH, Theme.SliderFill, true, 1, 23)
-
-                        drawCircle(trackX + (trackW * rLow), trackY + 1.5, 4.5, Color3.fromRGB(255, 255, 255), true, 26)
-                        drawCircle(trackX + (trackW * rHigh), trackY + 1.5, 4.5, Color3.fromRGB(255, 255, 255), true, 26)
-
-                        if Input.Mouse1Down and isHovering(trackX - 6, trackY - 8, trackW + 12, trackH + 16) then
-                            local newRatio = math.clamp((Input.MousePos.X - trackX) / trackW, 0, 1)
-                            local val = math.floor(el.Min + ((el.Max - el.Min) * newRatio) + 0.5)
-                            if math.abs(val - el.Low) < math.abs(val - el.High) then
-                                el:SetValue(val, el.High)
-                            else
-                                el:SetValue(el.Low, val)
-                            end
+                        else
+                            el.Dragging = false
                         end
 
                         itemY = itemY + 36
 
                     elseif el.Type == "Dropdown" then
-                        local selW = colW - 32
-                        local selH = 26
-                        local selX = secX + 16
-                        local selY = itemY + 2
-                        local hover = isHovering(selX, selY, selW, selH)
+                        drawText(secX + 16, itemY + 7, el.Name, Theme.TextDim, 12, false, true, 1, 20)
 
-                        drawRect(selX, selY, selW, selH, Theme.ValueBox, true, 1, 20)
-                        drawRect(selX, selY, selW, selH, hover and Theme.Border or Theme.BorderSubtle, false, 1, 21)
+                        local dropW = 140
+                        local dropH = 22
+                        local dropX = secX + colW - 16 - dropW
+                        local dropY = itemY + 4
+                        local hoverDrop = isHovering(dropX, dropY, dropW, dropH)
 
-                        local displayVal = el.Name
-                        if el.Multi and type(el.Value) == "table" then
-                            displayVal = tostring(#el.Value) .. " selected"
-                        elseif el.Value and el.Value ~= "" then
-                            displayVal = tostring(el.Value)
-                        end
+                        local text = tostring(el.Value or "Select...")
+                        drawRect(dropX, dropY, dropW, dropH, Theme.ValueBox, true, 1, 22)
+                        drawRect(dropX, dropY, dropW, dropH, hoverDrop and Theme.Border or Theme.BorderSubtle, false, 1, 23)
+                        drawText(dropX + 10, dropY + 4, text, Theme.Text, 11, false, true, 1, 24)
+                        drawText(dropX + dropW - 14, dropY + 4, "v", Theme.TextDark, 10, false, true, 1, 24)
 
-                        drawText(selX + 10, selY + 6, displayVal, Theme.TextDim, 12, false, true, 1, 22)
-                        drawText(selX + selW - 18, selY + 6, ":::", Theme.TextDark, 11, false, true, 1, 22)
-
-                        if hover and Input.Mouse1Clicked then
-                            Input.ActiveDropdown = (Input.ActiveDropdown == el and nil or el)
-                            el.PopupPos = Vector2.new(selX, selY + selH + 2)
+                        if hoverDrop and Input.Mouse1Clicked then
+                            if Maclib.DropdownContext == el then
+                                Maclib.DropdownContext = nil
+                            else
+                                Maclib.DropdownContext = el
+                                el.DropX = dropX
+                                el.DropY = dropY + dropH + 2
+                                el.DropW = dropW
+                            end
                         end
 
                         itemY = itemY + 38
@@ -957,86 +1239,89 @@ function Maclib:Window(config)
                         local btnW = colW - 32
                         local btnH = 26
                         local btnX = secX + 16
-                        local btnY = itemY + 2
-                        local hover = isHovering(btnX, btnY, btnW, btnH)
+                        local btnY = itemY + 4
+                        local hoverBtn = isHovering(btnX, btnY, btnW, btnH)
 
-                        drawRect(btnX, btnY, btnW, btnH, hover and Theme.CardHover or Theme.ValueBox, true, 1, 20)
-                        drawRect(btnX, btnY, btnW, btnH, hover and Theme.Border or Theme.BorderSubtle, false, 1, 21)
-                        drawText(btnX + (btnW / 2), btnY + 6, el.Name, hover and Theme.Text or Theme.TextDim, 12, true, true, 1, 22)
+                        drawRect(btnX, btnY, btnW, btnH, hoverBtn and Theme.ActiveTab or Theme.ValueBox, true, 1, 20)
+                        drawRect(btnX, btnY, btnW, btnH, hoverBtn and Theme.Border or Theme.BorderSubtle, false, 1, 21)
+                        drawText(btnX + (btnW / 2), btnY + 6, el.Name, Theme.Text, 12, true, true, 1, 22)
 
-                        if hover and Input.Mouse1Clicked then el.Callback() end
+                        if hoverBtn and Input.Mouse1Clicked then
+                            pcall(el.Callback)
+                        end
+
+                        itemY = itemY + 36
+
+                    elseif el.Type == "Input" then
+                        drawText(secX + 16, itemY + 5, el.Name, Theme.TextDim, 12, false, true, 1, 20)
+
+                        local inW = 120
+                        local inH = 22
+                        local inX = secX + colW - 16 - inW
+                        local inY = itemY + 2
+                        local hoverIn = isHovering(inX, inY, inW, inH)
+
+                        drawRect(inX, inY, inW, inH, Theme.ValueBox, true, 1, 20)
+                        drawRect(inX, inY, inW, inH, el.Focused and Theme.Accent or Theme.Border, false, 1, 21)
+                        drawText(inX + 8, inY + 4, el.Value ~= "" and el.Value or "Type...", el.Value ~= "" and Theme.Text or Theme.TextDark, 11, false, true, 1, 22)
+
+                        if hoverIn and Input.Mouse1Clicked then
+                            el.Focused = not el.Focused
+                        end
+
                         itemY = itemY + 36
                     end
                 end
 
-                if isLeft then leftY = leftY + secHeight + 14
-                else rightY = rightY + secHeight + 14 end
-            end
-        end
-
-        -- Dropdown Popup
-        if Input.ActiveDropdown and Input.ActiveDropdown.PopupPos then
-            local drop = Input.ActiveDropdown
-            local px, py = drop.PopupPos.X, drop.PopupPos.Y
-            local pw = colW - 32
-            local ph = #drop.Options * 24 + 4
-
-            drawRect(px, py, pw, ph, Theme.PopupBg, true, 1, 500)
-            drawRect(px, py, pw, ph, Theme.Border, false, 1, 501)
-
-            local optY = py + 2
-            for _, opt in ipairs(drop.Options) do
-                local optHover = isHovering(px, optY, pw, 24)
-                if optHover then drawRect(px + 2, optY, pw - 4, 24, Theme.CardHover, true, 1, 502) end
-
-                local isSelected = false
-                if drop.Multi and type(drop.Value) == "table" then
-                    for _, v in ipairs(drop.Value) do if v == opt then isSelected = true break end end
+                if isLeft then
+                    leftY = leftY + secHeight + 14
                 else
-                    isSelected = (drop.Value == opt)
+                    rightY = rightY + secHeight + 14
                 end
-
-                if isSelected then
-                    drawText(px + 8, optY + 5, "[x]", Theme.Text, 11, false, true, 1, 505)
-                end
-
-                drawText(px + (isSelected and 26 or 12), optY + 5, opt, isSelected and Theme.Text or Theme.TextDim, 12, false, true, 1, 505)
-
-                if optHover and Input.Mouse1Clicked then
-                    if drop.Multi then
-                        local found = false
-                        for idx, v in ipairs(drop.Value) do
-                            if v == opt then table.remove(drop.Value, idx) found = true break end
-                        end
-                        if not found then table.insert(drop.Value, opt) end
-                        drop:SetValue(drop.Value)
-                    else
-                        drop:SetValue(opt)
-                        Input.ActiveDropdown = nil
-                    end
-                end
-
-                optY = optY + 24
-            end
-
-            if Input.Mouse1Clicked and not isHovering(px, py - 30, pw, ph + 30) then
-                Input.ActiveDropdown = nil
             end
         end
+
+        -- 7. Floating Dropdown Context Menu
+        if Maclib.DropdownContext then
+            local el = Maclib.DropdownContext
+            local dx = el.DropX or (wx + 300)
+            local dy = el.DropY or (wy + 200)
+            local dw = el.DropW or 140
+            local dh = (#el.Options * 22) + 4
+
+            drawRect(dx, dy, dw, dh, Theme.WindowBg, true, 1, 70)
+            drawRect(dx, dy, dw, dh, Theme.Border, false, 1, 71)
+
+            for oIdx, opt in ipairs(el.Options) do
+                local optY = dy + 2 + ((oIdx - 1) * 22)
+                local hoverOpt = isHovering(dx, optY, dw, 22)
+                local isSel = (el.Value == opt)
+
+                if hoverOpt or isSel then
+                    drawRect(dx + 2, optY, dw - 4, 20, isSel and Theme.ActiveTab or Theme.CardBg, true, 1, 72)
+                end
+
+                drawText(dx + 10, optY + 3, tostring(opt), isSel and Theme.Accent or Theme.Text, 11, false, true, 1, 73)
+
+                if hoverOpt and Input.Mouse1Clicked then
+                    el:SetValue(opt)
+                    Maclib.DropdownContext = nil
+                    break
+                end
+            end
+
+            if Input.Mouse1Clicked and not isHovering(dx, dy, dw, dh) and not isHovering(dx, dy - 30, dw, 30) then
+                Maclib.DropdownContext = nil
+            end
+        end
+
+        -- 8. Active Interactive Color Picker
+        drawActiveColorPicker()
 
         endFrame()
     end)
 
-    function win:Destroy()
-        win.Active = false
-        if connection then connection:Disconnect() end
-        cleanupAllDrawings()
-    end
-
-    _G.MaclibInstance = win
-    _G.Maclib = Maclib
     return win
 end
 
-_G.Maclib = Maclib
 return Maclib
